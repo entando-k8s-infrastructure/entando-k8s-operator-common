@@ -20,26 +20,24 @@ import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
-import org.entando.kubernetes.client.EntandoOperatorTestConfig;
 import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
-import org.entando.kubernetes.controller.spi.container.KeycloakConnectionConfig;
 import org.entando.kubernetes.controller.spi.container.KeycloakName;
-import org.entando.kubernetes.controller.support.client.InfrastructureConfig;
+import org.entando.kubernetes.controller.spi.deployable.SsoConnectionInfo;
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
-import org.entando.kubernetes.model.DbmsVendor;
-import org.entando.kubernetes.model.JeeServer;
-import org.entando.kubernetes.model.KeycloakAwareSpec;
+import org.entando.kubernetes.controller.support.client.impl.EntandoOperatorTestConfig;
 import org.entando.kubernetes.model.app.EntandoApp;
 import org.entando.kubernetes.model.app.EntandoAppBuilder;
-import org.entando.kubernetes.model.infrastructure.EntandoClusterInfrastructure;
-import org.entando.kubernetes.model.infrastructure.EntandoClusterInfrastructureBuilder;
+import org.entando.kubernetes.model.common.DbmsVendor;
+import org.entando.kubernetes.model.common.JeeServer;
+import org.entando.kubernetes.model.common.KeycloakAwareSpec;
 import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServer;
 import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServerBuilder;
 import org.entando.kubernetes.model.keycloakserver.StandardKeycloakImage;
 import org.entando.kubernetes.model.plugin.EntandoPlugin;
 import org.entando.kubernetes.model.plugin.EntandoPluginBuilder;
 import org.entando.kubernetes.model.plugin.PluginSecurityLevel;
+import org.entando.kubernetes.test.e2etest.common.ConfigMapBasedSsoConnectionInfo;
 
 public interface InterProcessTestData {
 
@@ -72,22 +70,6 @@ public interface InterProcessTestData {
                 .withIngressHostName(MY_KEYCLOAK_HOSTNAME)
                 .withDbms(DbmsVendor.MYSQL)
                 //                .withTlsSecretName(MY_KEYCLOAK_TLS_SECRET)
-                .endSpec()
-                .build();
-    }
-
-    default EntandoClusterInfrastructure newEntandoClusterInfrastructure() {
-        return new EntandoClusterInfrastructureBuilder()
-                .withNewMetadata()
-                .withName(MY_CLUSTER_INFRASTRUCTURE)
-                .withNamespace(MY_CLUSTER_INFRASTRUCTURE_NAMESPACE)
-                .endMetadata()
-                .withNewSpec()
-                .withDbms(DbmsVendor.MYSQL)
-                .withIngressHostName("entando-infra.192.168.0.100.nip.io")
-                .withReplicas(3)
-                .withDefault(true)
-                .withTlsSecretName(MY_CLUSTER_INFRASTRUCTURE_TLS_SECRET)
                 .endSpec()
                 .build();
     }
@@ -128,7 +110,7 @@ public interface InterProcessTestData {
                 .build();
     }
 
-    default <T extends KeycloakAwareSpec> KeycloakConnectionConfig emulateKeycloakDeployment(SimpleK8SClient<?> client) {
+    default <T extends KeycloakAwareSpec> SsoConnectionInfo emulateKeycloakDeployment(SimpleK8SClient<?> client) {
         Secret secret = new SecretBuilder().withNewMetadata().withName(KeycloakName.DEFAULT_KEYCLOAK_ADMIN_SECRET)
                 .endMetadata()
                 .addToStringData(SecretUtils.USERNAME_KEY, MY_KEYCLOAK_ADMIN_USERNAME)
@@ -141,18 +123,7 @@ public interface InterProcessTestData {
                 .addToData(NameUtils.INTERNAL_URL_KEY, MY_KEYCLOAK_BASE_URL)
                 .build();
         client.secrets().overwriteControllerConfigMap(configMap);
-        return new KeycloakConnectionConfig(secret, configMap);
+        return new ConfigMapBasedSsoConnectionInfo(secret, configMap);
     }
 
-    default <T extends KeycloakAwareSpec> void emulateClusterInfrastuctureDeployment(SimpleK8SClient<?> client) {
-        EntandoClusterInfrastructure dummyClusterInfrastructure = newEntandoClusterInfrastructure();
-        ConfigMap configMap = new ConfigMapBuilder().withNewMetadata()
-                .withName(InfrastructureConfig.connectionConfigMapNameFor(dummyClusterInfrastructure))
-                .endMetadata()
-                .addToData(InfrastructureConfig.ENTANDO_K8S_SERVICE_CLIENT_ID_KEY, "asdf")
-                .addToData(InfrastructureConfig.ENTANDO_K8S_SERVICE_EXTERNAL_URL_KEY, "http://som.com/asdf")
-                .addToData(InfrastructureConfig.ENTANDO_K8S_SERVICE_INTERNAL_URL_KEY, "http://som.com/asdf")
-                .build();
-        client.secrets().createConfigMapIfAbsent(dummyClusterInfrastructure, configMap);
-    }
 }

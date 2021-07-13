@@ -25,7 +25,7 @@ import java.util.Optional;
 import org.entando.kubernetes.controller.spi.common.SerializeByReference;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
 import org.entando.kubernetes.controller.spi.result.ServiceDeploymentResult;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public interface Deployable<T extends ServiceDeploymentResult<T>> {
 
@@ -34,7 +34,14 @@ public interface Deployable<T extends ServiceDeploymentResult<T>> {
      */
     List<DeployableContainer> getContainers();
 
-    String getNameQualifier();
+    default Optional<ExternalService> getExternalService() {
+        return Optional.empty();
+    }
+
+    /**
+     * Optional qualifying string for scenarios where a single Custom Resource results in more than one deployment.
+     */
+    Optional<String> getQualifier();
 
     @SerializeByReference
     EntandoCustomResource getCustomResource();

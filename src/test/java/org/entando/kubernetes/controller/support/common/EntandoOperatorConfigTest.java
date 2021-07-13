@@ -17,10 +17,13 @@
 package org.entando.kubernetes.controller.support.common;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
+import org.assertj.core.api.Assertions;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorComplianceMode;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfigProperty;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Tags;
@@ -31,35 +34,66 @@ class EntandoOperatorConfigTest {
 
     @AfterEach
     void resetPropertiesTested() {
-        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty());
-        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty());
+        System.clearProperty(EntandoOperatorSpiConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty());
     }
 
     @Test
     void testDeploymentType() {
         System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty());
-        assertThat(EntandoOperatorConfig.getOperatorDeploymentType(), is(OperatorDeploymentType.HELM));
+        Assertions.assertThat(EntandoOperatorConfig.getOperatorDeploymentType()).isEqualTo(OperatorDeploymentType.HELM);
         System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(),
                 OperatorDeploymentType.OLM.getName());
-        assertThat(EntandoOperatorConfig.getOperatorDeploymentType(), is(OperatorDeploymentType.OLM));
+        Assertions.assertThat(EntandoOperatorConfig.getOperatorDeploymentType()).isEqualTo(OperatorDeploymentType.OLM);
         System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(),
                 OperatorDeploymentType.HELM.getName());
-        assertThat(EntandoOperatorConfig.getOperatorDeploymentType(), is(OperatorDeploymentType.HELM));
+        Assertions.assertThat(EntandoOperatorConfig.getOperatorDeploymentType()).isEqualTo(OperatorDeploymentType.HELM);
         System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(), "invalid");
-        assertThat(EntandoOperatorConfig.getOperatorDeploymentType(), is(OperatorDeploymentType.HELM));
+        Assertions.assertThat(EntandoOperatorConfig.getOperatorDeploymentType()).isEqualTo(OperatorDeploymentType.HELM);
+    }
+
+    @Test
+    void testIsClusterScope() {
+        //Because it will use the current namespace
+        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty());
+        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE.getJvmSystemProperty());
+        Assertions.assertThat(EntandoOperatorConfig.isClusterScopedDeployment()).isFalse();
+        //OLM contract
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(),
+                OperatorDeploymentType.OLM.getName());
+        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE.getJvmSystemProperty());
+        Assertions.assertThat(EntandoOperatorConfig.isClusterScopedDeployment()).isTrue();
+        //Using current namespace again
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(),
+                OperatorDeploymentType.HELM.getName());
+        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE.getJvmSystemProperty());
+        Assertions.assertThat(EntandoOperatorConfig.isClusterScopedDeployment()).isFalse();
+        //The Helm deployment expects "*" for cluster scope
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE.getJvmSystemProperty(),
+                OperatorDeploymentType.HELM.getName());
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE.getJvmSystemProperty(), "*");
+        Assertions.assertThat(EntandoOperatorConfig.isClusterScopedDeployment()).isTrue();
+    }
+
+    @Test
+    void testAccessibleNamespaces() {
+        //The Helm deployment expects "*" for cluster scope
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE.getJvmSystemProperty(), "namespace1, namespace2");
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_OF_INTEREST.getJvmSystemProperty(), "namespace2, namespace3");
+        assertThat(EntandoOperatorConfig.getAllAccessibleNamespaces(), containsInAnyOrder("namespace1", "namespace2", "namespace3"));
+        assertThat(EntandoOperatorConfig.getAllAccessibleNamespaces().size(), is(3));
     }
 
     @Test
     void testComplianceMode() {
-        System.clearProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty());
+        System.clearProperty(EntandoOperatorSpiConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty());
         assertThat(EntandoOperatorSpiConfig.getComplianceMode(), is(EntandoOperatorComplianceMode.COMMUNITY));
-        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(),
+        System.setProperty(EntandoOperatorSpiConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(),
                 EntandoOperatorComplianceMode.REDHAT.getName());
         assertThat(EntandoOperatorSpiConfig.getComplianceMode(), is(EntandoOperatorComplianceMode.REDHAT));
-        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(),
+        System.setProperty(EntandoOperatorSpiConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(),
                 EntandoOperatorComplianceMode.COMMUNITY.getName());
         assertThat(EntandoOperatorSpiConfig.getComplianceMode(), is(EntandoOperatorComplianceMode.COMMUNITY));
-        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(), "invalid");
+        System.setProperty(EntandoOperatorSpiConfigProperty.ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE.getJvmSystemProperty(), "invalid");
         assertThat(EntandoOperatorSpiConfig.getComplianceMode(), is(EntandoOperatorComplianceMode.COMMUNITY));
     }
 

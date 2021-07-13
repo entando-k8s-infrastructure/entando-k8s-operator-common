@@ -16,6 +16,8 @@
 
 package org.entando.kubernetes.controller.support.client;
 
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
+
 import io.fabric8.kubernetes.api.model.ServiceAccount;
 import io.fabric8.kubernetes.api.model.ServiceAccountBuilder;
 import io.fabric8.kubernetes.api.model.ServiceAccountFluentImpl;
@@ -35,10 +37,12 @@ public class DoneableServiceAccount extends ServiceAccountFluentImpl<DoneableSer
         this.action = action;
     }
 
+    //TODO get rid of this
     public ServiceAccount done() {
-        ServiceAccount buildable = new ServiceAccount(getApiVersion(), isAutomountServiceAccountToken(), buildImagePullSecrets(), getKind(),
+        ServiceAccount buildable = new ServiceAccount(getApiVersion(), getAutomountServiceAccountToken(), buildImagePullSecrets(),
+                getKind(),
                 buildMetadata(), buildSecrets());
-        return action.apply(buildable);
+        return withDiagnostics(() -> action.apply(buildable), () -> buildable);
     }
 
     @Override

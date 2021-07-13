@@ -19,7 +19,7 @@ package org.entando.kubernetes.controller.support.client;
 import io.fabric8.kubernetes.api.model.extensions.HTTPIngressPath;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import java.util.Map;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public interface IngressClient {
 

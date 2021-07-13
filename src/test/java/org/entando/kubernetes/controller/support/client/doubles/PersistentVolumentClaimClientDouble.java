@@ -19,13 +19,13 @@ package org.entando.kubernetes.controller.support.client.doubles;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import java.util.concurrent.ConcurrentHashMap;
 import org.entando.kubernetes.controller.support.client.PersistentVolumeClaimClient;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class PersistentVolumentClaimClientDouble extends AbstractK8SClientDouble implements
         PersistentVolumeClaimClient {
 
-    public PersistentVolumentClaimClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
-        super(namespaces);
+    public PersistentVolumentClaimClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
+        super(namespaces, cluster);
     }
 
     @Override

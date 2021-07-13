@@ -22,28 +22,34 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
-import org.entando.kubernetes.controller.spi.container.KeycloakConnectionConfig;
 import org.entando.kubernetes.controller.spi.deployable.DbAwareDeployable;
-import org.entando.kubernetes.controller.spi.examples.SampleExposedDeploymentResult;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
+import org.entando.kubernetes.controller.spi.deployable.SsoClientConfig;
+import org.entando.kubernetes.controller.spi.deployable.SsoConnectionInfo;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
+import org.entando.kubernetes.controller.spi.result.DefaultExposedDeploymentResult;
 import org.entando.kubernetes.controller.support.spibase.IngressingDeployableBase;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
-import org.entando.kubernetes.model.KeycloakAwareSpec;
+import org.entando.kubernetes.model.common.EntandoBaseCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResourceStatus;
+import org.entando.kubernetes.model.common.KeycloakAwareSpec;
 
 public class SpringBootDeployable<S extends KeycloakAwareSpec> implements
-        IngressingDeployableBase<SampleExposedDeploymentResult>,
-        DbAwareDeployable<SampleExposedDeploymentResult> {
+        IngressingDeployableBase<DefaultExposedDeploymentResult>,
+        DbAwareDeployable<DefaultExposedDeploymentResult> {
 
-    private final EntandoBaseCustomResource<S> customResource;
+    private final EntandoBaseCustomResource<S, EntandoCustomResourceStatus> customResource;
+    private final SsoConnectionInfo ssoConnectionInfo;
     private final DeployableContainer container;
 
-    public SpringBootDeployable(EntandoBaseCustomResource<S> customResource,
-            KeycloakConnectionConfig keycloakConnectionConfig,
-            DatabaseServiceResult databaseServiceResult) {
+    public SpringBootDeployable(EntandoBaseCustomResource<S, EntandoCustomResourceStatus> customResource,
+            SsoConnectionInfo ssoConnectionInfo,
+            DatabaseConnectionInfo databaseConnectionInfo) {
         this.customResource = customResource;
-        container = new SampleSpringBootDeployableContainer<>(customResource, keycloakConnectionConfig, databaseServiceResult);
+        this.ssoConnectionInfo = ssoConnectionInfo;
+        container = new SampleSpringBootDeployableContainer<>(customResource, databaseConnectionInfo, ssoConnectionInfo,
+                new SsoClientConfig("entando", "asdf", "asdf"));
     }
 
     /**
@@ -65,23 +71,28 @@ public class SpringBootDeployable<S extends KeycloakAwareSpec> implements
     }
 
     @Override
-    public String getNameQualifier() {
-        return NameUtils.DEFAULT_SERVER_QUALIFIER;
+    public Optional<String> getQualifier() {
+        return Optional.of(NameUtils.DEFAULT_SERVER_QUALIFIER);
     }
 
     @Override
-    public EntandoBaseCustomResource<S> getCustomResource() {
+    public EntandoBaseCustomResource<S, EntandoCustomResourceStatus> getCustomResource() {
         return customResource;
     }
 
     @Override
-    public SampleExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
-        return new SampleExposedDeploymentResult(pod, service, ingress);
+    public DefaultExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
+        return new DefaultExposedDeploymentResult(pod, service, ingress);
     }
 
     @Override
     public String getServiceAccountToUse() {
         return this.customResource.getSpec().getServiceAccountToUse().orElse(getDefaultServiceAccountName());
+    }
+
+    @Override
+    public boolean isIngressRequired() {
+        return true;
     }
 
 }

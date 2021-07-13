@@ -1,4 +1,4 @@
-FROM entando/entando-ubi8-java11-base:6.3.5
+FROM entando/entando-ubi8-java11-base:6.3.7
 ARG VERSION
 LABEL name="Entando K8S Oerator Common" \
       vendor="Entando" \
@@ -7,6 +7,8 @@ LABEL name="Entando K8S Oerator Common" \
       summary="This Docker image contains all the common libraries used by Entando controllers." \
       description="This Docker image contains all the common libraries used by Entando controllers."
 COPY target/generated-resources/licenses /licenses
-COPY target/lib/* /deployments/lib/
-COPY target/entando-k8s-operator-common-${VERSION}.jar /deployments/lib/org.entando.entando-k8s-operator-common-${VERSION}.jar
+COPY target/quarkus-app/lib /deployments/lib
+USER root
+RUN chmod ug+rw -R /deployments/ && chown 1001:root -R /deployments/
+USER 1001
 ENTRYPOINT [ "/deployments/run-java.sh" ]

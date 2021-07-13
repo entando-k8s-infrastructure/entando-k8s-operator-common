@@ -19,16 +19,25 @@ package org.entando.kubernetes.controller.support.common;
 import static java.lang.String.format;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import java.util.Map.Entry;
 import java.util.Optional;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorConfigBase;
 import org.entando.kubernetes.controller.spi.container.DockerImageInfo;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class EntandoImageResolver {
 
+    public static final String IMAGE_OVERRIDE_ANNOTATION_PREFIX = "image-override.entando.org/";
     private final ConfigMap imageVersionsConfigMap;
+    private final EntandoCustomResource resourceOfInterest;
 
     public EntandoImageResolver(ConfigMap imageVersionsConfigMap) {
+        this(imageVersionsConfigMap, null);
+    }
+
+    public EntandoImageResolver(ConfigMap imageVersionsConfigMap, EntandoCustomResource resourceOfInterest) {
         this.imageVersionsConfigMap = imageVersionsConfigMap;
+        this.resourceOfInterest = resourceOfInterest;
     }
 
     public String determineImageUri(String imageUri) {
@@ -36,6 +45,18 @@ public class EntandoImageResolver {
     }
 
     public String determineImageUri(DockerImageInfo dockerImageInfo) {
+        //First we look at the annotations in the resource (for testing purposes)
+        // Is this a security risk? no, it is 100% in control of the deployer user.
+        if (resourceOfInterest != null && resourceOfInterest.getMetadata().getAnnotations() != null) {
+            Optional<String> debugImageOverride = resourceOfInterest.getMetadata().getAnnotations().entrySet().stream()
+                    .filter(entry -> entry.getKey().equals(IMAGE_OVERRIDE_ANNOTATION_PREFIX + dockerImageInfo.getRepository())
+                            || entry.getKey().equals(IMAGE_OVERRIDE_ANNOTATION_PREFIX + dockerImageInfo.getOrganizationAwareRepository()))
+                    .map(Entry::getValue)
+                    .findFirst();
+            if (debugImageOverride.isPresent()) {
+                return debugImageOverride.get();
+            }
+        }
         //The environment variable injected by the OLM takes precedence over everything
         Optional<String> injectedImageUri = EntandoOperatorConfigBase.lookupProperty(relateImage(dockerImageInfo.getRepository()))
                 .or(() -> EntandoOperatorConfigBase.lookupProperty(relateImage(dockerImageInfo.getOrganizationAwareRepository())));

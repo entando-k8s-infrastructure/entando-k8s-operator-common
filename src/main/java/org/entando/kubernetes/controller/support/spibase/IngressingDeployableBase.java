@@ -16,37 +16,41 @@
 
 package org.entando.kubernetes.controller.support.spibase;
 
+import io.fabric8.kubernetes.client.CustomResource;
 import java.util.Optional;
 import org.entando.kubernetes.controller.spi.deployable.IngressingDeployable;
 import org.entando.kubernetes.controller.spi.result.ExposedDeploymentResult;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
-import org.entando.kubernetes.model.EntandoIngressingDeploymentSpec;
-import org.entando.kubernetes.model.EntandoResourceRequirements;
+import org.entando.kubernetes.model.common.EntandoCustomResourceStatus;
+import org.entando.kubernetes.model.common.EntandoDeploymentSpec;
+import org.entando.kubernetes.model.common.EntandoIngressingDeploymentSpec;
+import org.entando.kubernetes.model.common.EntandoResourceRequirements;
 
 public interface IngressingDeployableBase<T extends ExposedDeploymentResult<T>> extends IngressingDeployable<T> {
 
     @Override
+    default boolean isIngressRequired() {
+        return false;
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     default Optional<String> getFileUploadLimit() {
-        EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec> r =
-                (EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec>) getCustomResource();
-        return r.getSpec().getResourceRequirements().flatMap(EntandoResourceRequirements::getFileUploadLimit);
+        return ((CustomResource<EntandoDeploymentSpec, EntandoCustomResourceStatus>) getCustomResource()).getSpec()
+                .getResourceRequirements().flatMap(EntandoResourceRequirements::getFileUploadLimit);
     }
 
     @Override
     @SuppressWarnings("unchecked")
     default Optional<String> getTlsSecretName() {
-        EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec> r =
-                (EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec>) getCustomResource();
-        return r.getSpec().getTlsSecretName();
+        return ((CustomResource<EntandoIngressingDeploymentSpec, EntandoCustomResourceStatus>) getCustomResource()).getSpec()
+                .getTlsSecretName();
     }
 
     @Override
     @SuppressWarnings("unchecked")
     default Optional<String> getIngressHostName() {
-        EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec> r =
-                (EntandoBaseCustomResource<? extends EntandoIngressingDeploymentSpec>) getCustomResource();
-        return r.getSpec().getIngressHostName();
+        return ((CustomResource<EntandoIngressingDeploymentSpec, EntandoCustomResourceStatus>) getCustomResource()).getSpec()
+                .getIngressHostName();
     }
 
 }

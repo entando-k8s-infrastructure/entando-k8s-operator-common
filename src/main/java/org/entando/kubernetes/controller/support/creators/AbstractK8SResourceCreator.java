@@ -16,13 +16,13 @@
 
 package org.entando.kubernetes.controller.support.creators;
 
+import com.google.common.base.Strings;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import org.entando.kubernetes.controller.spi.common.LabelNames;
 import org.entando.kubernetes.controller.spi.common.ResourceUtils;
-import org.entando.kubernetes.controller.support.common.KubeUtils;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class AbstractK8SResourceCreator {
 
@@ -33,7 +33,14 @@ public class AbstractK8SResourceCreator {
     }
 
     protected String resolveName(String nameQualifier, String suffix) {
-        return entandoCustomResource.getMetadata().getName() + "-" + nameQualifier + suffix;
+        StringBuilder sb = new StringBuilder(entandoCustomResource.getMetadata().getName());
+        if (!Strings.isNullOrEmpty(nameQualifier)) {
+            sb.append("-").append(nameQualifier);
+        }
+        if (!Strings.isNullOrEmpty(suffix)) {
+            sb.append("-").append(suffix);
+        }
+        return sb.toString();
     }
 
     protected ObjectMeta fromCustomResource(boolean ownedByCustomResource, String name, String nameQualifier) {
@@ -47,32 +54,22 @@ public class AbstractK8SResourceCreator {
         return metaBuilder.build();
     }
 
-    protected ObjectMeta fromCustomResource(boolean ownedByCustomResource, String name) {
-        ObjectMetaBuilder metaBuilder = new ObjectMetaBuilder()
+    protected ObjectMeta fromCustomResource(String name) {
+        return new ObjectMetaBuilder()
                 .withName(name)
                 .withNamespace(this.entandoCustomResource.getMetadata().getNamespace())
-                .withLabels(labelsFromResource());
-        if (ownedByCustomResource) {
-            metaBuilder = metaBuilder.withOwnerReferences(ResourceUtils.buildOwnerReference(this.entandoCustomResource));
-        }
-        return metaBuilder.build();
+                .withLabels(labelsFromResource()).addToOwnerReferences(ResourceUtils.buildOwnerReference(this.entandoCustomResource))
+                .build();
     }
 
     protected Map<String, String> labelsFromResource(String nameQualifier) {
-        Map<String, String> labels = new ConcurrentHashMap<>();
-        labels.put(KubeUtils.DEPLOYMENT_LABEL_NAME, resolveName(nameQualifier, ""));
-        resourceKindLabels(labels);
+        Map<String, String> labels = labelsFromResource();
+        labels.put(LabelNames.DEPLOYMENT.getName(), resolveName(nameQualifier, null));
         return labels;
     }
 
     protected Map<String, String> labelsFromResource() {
-        Map<String, String> labels = new ConcurrentHashMap<>();
-        resourceKindLabels(labels);
-        return labels;
+        return ResourceUtils.labelsFromResource(this.entandoCustomResource);
     }
 
-    private void resourceKindLabels(Map<String, String> labels) {
-        labels.put(entandoCustomResource.getKind(), entandoCustomResource.getMetadata().getName());
-        labels.put(KubeUtils.ENTANDO_RESOURCE_KIND_LABEL_NAME, entandoCustomResource.getKind());
-    }
 }

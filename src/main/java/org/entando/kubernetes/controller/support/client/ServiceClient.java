@@ -18,14 +18,21 @@ package org.entando.kubernetes.controller.support.client;
 
 import io.fabric8.kubernetes.api.model.Endpoints;
 import io.fabric8.kubernetes.api.model.Service;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public interface ServiceClient {
 
     Service createOrReplaceService(EntandoCustomResource peerInNamespace, Service service);
 
+    Service createOrReplaceDelegateService(Service service);
+
     Service loadService(EntandoCustomResource peerInNamespace, String name);
+
+    Service loadControllerService(String name);
 
     Endpoints createOrReplaceEndpoints(EntandoCustomResource peerInNamespace, Endpoints endpoints);
 
+    Endpoints createOrReplaceDelegateEndpoints(Endpoints endpoints);
+
+    Endpoints loadEndpoints(EntandoCustomResource peerInNamespace, String endpointsName);
 }

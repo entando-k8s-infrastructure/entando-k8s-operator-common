@@ -18,7 +18,8 @@ package org.entando.kubernetes.controller.support.client.doubles;
 
 import io.fabric8.kubernetes.client.VersionInfo;
 import java.text.ParseException;
-import java.util.concurrent.ConcurrentHashMap;
+import org.entando.kubernetes.controller.spi.capability.doubles.CapabilityClientDouble;
+import org.entando.kubernetes.controller.support.client.CapabilityClient;
 import org.entando.kubernetes.controller.support.client.DeploymentClient;
 import org.entando.kubernetes.controller.support.client.IngressClient;
 import org.entando.kubernetes.controller.support.client.PersistentVolumeClaimClient;
@@ -31,16 +32,19 @@ import org.mockito.Mockito;
 
 public class SimpleK8SClientDouble extends AbstractK8SClientDouble implements SimpleK8SClient<EntandoResourceClientDouble> {
 
-    private final ServiceClient serviceClient = Mockito.spy(new ServiceClientDouble(getNamespaces()));
+    private final ServiceClient serviceClient = Mockito.spy(new ServiceClientDouble(getNamespaces(), getCluster()));
     private final PersistentVolumeClaimClient persistentVolumeClaimClient = Mockito
             .spy(new PersistentVolumentClaimClientDouble(
-                    getNamespaces()));
-    private final IngressClient ingressClient = Mockito.spy(new IngressClientDouble(getNamespaces()));
+                    getNamespaces(), getCluster()));
+    private final IngressClient ingressClient = Mockito.spy(new IngressClientDouble(getNamespaces(), getCluster()));
     private final DeploymentClient deploymentClient;
-    private final SecretClient secretClient = Mockito.spy(new SecretClientDouble(getNamespaces()));
-    private final EntandoResourceClientDouble entandoResourceClient = Mockito.spy(new EntandoResourceClientDouble(getNamespaces()));
-    private final PodClient podClient = Mockito.spy(new PodClientDouble(getNamespaces()));
-    private final ServiceAccountClientDouble serviceAccountClient = Mockito.spy(new ServiceAccountClientDouble(getNamespaces()));
+    private final SecretClient secretClient = Mockito.spy(new SecretClientDouble(getNamespaces(), getCluster()));
+    private final EntandoResourceClientDouble entandoResourceClient = Mockito
+            .spy(new EntandoResourceClientDouble(getNamespaces(), getCluster()));
+    private final PodClient podClient = Mockito.spy(new PodClientDouble(getNamespaces(), getCluster()));
+    private final ServiceAccountClientDouble serviceAccountClient = Mockito
+            .spy(new ServiceAccountClientDouble(getNamespaces(), getCluster()));
+    private final CapabilityClientDouble capabilityClient = Mockito.spy(new CapabilityClientDouble(getNamespaces(), getCluster()));
     private final VersionInfo version;
 
     public SimpleK8SClientDouble() {
@@ -53,20 +57,16 @@ public class SimpleK8SClientDouble extends AbstractK8SClientDouble implements Si
 
     public SimpleK8SClientDouble(VersionInfo version) {
         this.version = version;
-        this.deploymentClient = Mockito.spy(new DeploymentClientDouble(getNamespaces(), version));
+        this.deploymentClient = Mockito.spy(new DeploymentClientDouble(getNamespaces(), getCluster(), version));
     }
 
     private static VersionInfo getVersionInfo(int minorVersion) {
-        final ConcurrentHashMap<String, String> data = new ConcurrentHashMap<>();
         try {
-            data.put("minor", String.valueOf(minorVersion));
-            data.put("major", "1");
-            data.put("gitCommit", "123");
-            data.put("gitVersion", "1");
-            data.put("buildDate", "2021-01-31T14:00:12Z");
-            data.put("MAJOR", "1");
-            data.put("MAJOR", "1");
-            return new VersionInfo(data);
+            return new VersionInfo.Builder().withMinor(String.valueOf(minorVersion))
+                    .withMajor("1")
+                    .withGitCommit("123")
+                    .withGitVersion("1")
+                    .withBuildDate("2021-01-31T14:00:12Z").build();
         } catch (ParseException e) {
             //no need to do anything here
             return null;
@@ -80,6 +80,11 @@ public class SimpleK8SClientDouble extends AbstractK8SClientDouble implements Si
     @Override
     public ServiceClient services() {
         return this.serviceClient;
+    }
+
+    @Override
+    public CapabilityClient capabilities() {
+        return this.capabilityClient;
     }
 
     @Override

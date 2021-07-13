@@ -20,7 +20,7 @@ import java.beans.Introspector;
 import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.regex.Pattern;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class NameUtils {
 
@@ -30,6 +30,11 @@ public class NameUtils {
     public static final String DEFAULT_SERVICE_SUFFIX = "service";
     public static final String DEFAULT_SERVER_QUALIFIER = "server";
     public static final String DEFAULT_INGRESS_SUFFIX = "ingress";
+    public static final String MAIN_QUALIFIER = "main";
+    public static final String DB_QUALIFIER = "db";
+    public static final String SSO_QUALIFIER = "sso";
+    public static final String DEFAULT_DEPLOYMENT_SUFFIX = "deployment";
+    public static final String DEFAULT_PVC_SUFFIX = "pvc";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Pattern pattern = Pattern.compile("(?=[A-Z][a-z])");
 
@@ -77,11 +82,14 @@ public class NameUtils {
     }
 
     public static String databaseCompliantName(EntandoCustomResource resource, String nameQualifier, DbmsVendorConfig dbmsVendorConfig) {
-        String databaseName = NameUtils.snakeCaseOf(resource.getMetadata().getName()) + "_" + nameQualifier;
-        if (databaseName.length() > dbmsVendorConfig.getMaxNameLength()) {
-            databaseName = databaseName.substring(0, dbmsVendorConfig.getMaxNameLength() - 3) + randomNumeric(3);
+        StringBuilder idealDatabaseName = new StringBuilder(NameUtils.snakeCaseOf(resource.getMetadata().getName()));
+        if (nameQualifier != null) {
+            idealDatabaseName.append("_").append(NameUtils.snakeCaseOf(nameQualifier));
         }
-        return databaseName;
+        if (idealDatabaseName.length() > dbmsVendorConfig.getMaxNameLength()) {
+            return idealDatabaseName.substring(0, dbmsVendorConfig.getMaxNameLength() - 3) + randomNumeric(3);
+        }
+        return idealDatabaseName.toString();
 
     }
 
@@ -90,6 +98,30 @@ public class NameUtils {
     }
 
     public static String standardServiceName(EntandoCustomResource resource) {
-        return resource.getMetadata().getName() + "-" + DEFAULT_SERVER_QUALIFIER + "-" + DEFAULT_SERVICE_SUFFIX;
+        return resource.getMetadata().getName() + "-" + DEFAULT_SERVICE_SUFFIX;
+    }
+
+    public static String standardServiceName(EntandoCustomResource resource, String qualifier) {
+        if (NameUtils.MAIN_QUALIFIER.equals(qualifier)) {
+            return standardServiceName(resource);
+        } else {
+            return resource.getMetadata().getName() + "-" + qualifier + "-" + DEFAULT_SERVICE_SUFFIX;
+        }
+    }
+
+    public static String standardDeployment(EntandoCustomResource resource) {
+        return resource.getMetadata().getName() + "-" + DEFAULT_DEPLOYMENT_SUFFIX;
+    }
+
+    public static String standardPersistentVolumeClaim(EntandoCustomResource resource, String containerQualifier) {
+        return resource.getMetadata().getName() + "-" + containerQualifier + "-" + DEFAULT_PVC_SUFFIX;
+    }
+
+    public static String lowerDashDelimitedOf(String name) {
+        return name.replace("_", "-").toLowerCase(Locale.ROOT);
+    }
+
+    public static String standardAdminSecretName(EntandoCustomResource keycloakServer) {
+        return keycloakServer.getMetadata().getName() + "-admin-secret";
     }
 }

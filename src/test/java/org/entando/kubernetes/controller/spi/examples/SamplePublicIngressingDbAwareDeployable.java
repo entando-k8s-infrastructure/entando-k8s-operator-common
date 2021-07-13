@@ -21,37 +21,43 @@ import static org.entando.kubernetes.controller.spi.common.SecretUtils.generateS
 import io.fabric8.kubernetes.api.model.Secret;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
-import org.entando.kubernetes.controller.spi.container.KeycloakConnectionConfig;
+import org.entando.kubernetes.controller.spi.container.KeycloakName;
+import org.entando.kubernetes.controller.spi.deployable.PublicIngressingDeployable;
 import org.entando.kubernetes.controller.spi.deployable.Secretive;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
-import org.entando.kubernetes.controller.support.spibase.PublicIngressingDeployableBase;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
-import org.entando.kubernetes.model.KeycloakAwareSpec;
+import org.entando.kubernetes.controller.spi.deployable.SsoClientConfig;
+import org.entando.kubernetes.controller.spi.deployable.SsoConnectionInfo;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
+import org.entando.kubernetes.controller.spi.result.DefaultExposedDeploymentResult;
+import org.entando.kubernetes.model.common.EntandoBaseCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResourceStatus;
+import org.entando.kubernetes.model.common.KeycloakAwareSpec;
 
 public class SamplePublicIngressingDbAwareDeployable<S extends KeycloakAwareSpec> extends
-        SampleIngressingDbAwareDeployable<S> implements PublicIngressingDeployableBase<SampleExposedDeploymentResult>,
+        SampleIngressingDbAwareDeployable<S> implements PublicIngressingDeployable<DefaultExposedDeploymentResult>,
         Secretive {
 
     private final Secret sampleSecret;
-    private KeycloakConnectionConfig keycloakConnectionConfig;
+    private final SsoConnectionInfo ssoConnectionInfo;
 
-    public SamplePublicIngressingDbAwareDeployable(EntandoBaseCustomResource<S> entandoResource,
-            DatabaseServiceResult databaseServiceResult,
-            KeycloakConnectionConfig keycloakConnectionConfig) {
-        super(entandoResource, databaseServiceResult);
-        this.keycloakConnectionConfig = keycloakConnectionConfig;
+    public SamplePublicIngressingDbAwareDeployable(EntandoBaseCustomResource<S, EntandoCustomResourceStatus> entandoResource,
+            DatabaseConnectionInfo databaseConnectionInfo,
+            SsoConnectionInfo ssoConnectionInfo) {
+        super(entandoResource, databaseConnectionInfo);
+        this.ssoConnectionInfo = ssoConnectionInfo;
         sampleSecret = generateSecret(this.entandoResource, secretName(this.entandoResource),
                 "entando_keycloak_admin");
 
     }
 
-    public static <T extends EntandoBaseCustomResource<?>> String secretName(T resource) {
+    public static <T extends EntandoBaseCustomResource<?, EntandoCustomResourceStatus>> String secretName(T resource) {
         return resource.getMetadata().getName() + "-admin-secret";
     }
 
-    protected List<DeployableContainer> createContainers(EntandoBaseCustomResource<S> entandoResource) {
-        return Collections.singletonList(new SampleDeployableContainer<>(entandoResource, databaseServiceResult));
+    protected List<DeployableContainer> createContainers(EntandoBaseCustomResource<S, EntandoCustomResourceStatus> entandoResource) {
+        return Collections.singletonList(new SampleDeployableContainer<>(entandoResource, databaseConnectionInfo));
     }
 
     @Override
@@ -60,12 +66,29 @@ public class SamplePublicIngressingDbAwareDeployable<S extends KeycloakAwareSpec
     }
 
     @Override
-    public KeycloakConnectionConfig getKeycloakConnectionConfig() {
-        return keycloakConnectionConfig;
+    public String getServiceAccountToUse() {
+        return this.entandoResource.getSpec().getServiceAccountToUse().orElse(getDefaultServiceAccountName());
     }
 
     @Override
-    public String getServiceAccountToUse() {
-        return this.entandoResource.getSpec().getServiceAccountToUse().orElse(getDefaultServiceAccountName());
+    public boolean isIngressRequired() {
+        return true;
+    }
+
+    @Override
+    public SsoConnectionInfo getSsoConnectionInfo() {
+        return ssoConnectionInfo;
+    }
+
+    @Override
+    public SsoClientConfig getSsoClientConfig() {
+        return new SsoClientConfig(KeycloakName.ENTANDO_DEFAULT_KEYCLOAK_REALM,
+                entandoResource.getMetadata().getName() + "-" + NameUtils.DEFAULT_SERVER_QUALIFIER,
+                entandoResource.getMetadata().getName() + "-" + NameUtils.DEFAULT_SERVER_QUALIFIER);
+    }
+
+    @Override
+    public Optional<String> getPublicClientId() {
+        return Optional.of(KeycloakName.PUBLIC_CLIENT_ID);
     }
 }

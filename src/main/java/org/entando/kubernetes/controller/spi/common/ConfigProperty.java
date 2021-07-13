@@ -16,9 +16,13 @@
 
 package org.entando.kubernetes.controller.spi.common;
 
+import java.util.Locale;
+
 public interface ConfigProperty {
 
-    String getJvmSystemProperty();
+    default String getJvmSystemProperty() {
+        return name().toLowerCase(Locale.ROOT).replace("_", ".");
+    }
 
     String name();
 }

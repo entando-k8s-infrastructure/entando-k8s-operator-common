@@ -16,22 +16,24 @@
 
 package org.entando.kubernetes.controller.spi.common;
 
-public enum EntandoOperatorSpiConfigProperty implements ConfigProperty {
+import org.entando.kubernetes.model.common.NamedEnum;
 
-    ENTANDO_K8S_OPERATOR_DEFAULT_CLUSTERED_STORAGE_CLASS("entando.k8s.operator.default.clustered.storage.class"),
-    ENTANDO_K8S_OPERATOR_DEFAULT_NON_CLUSTERED_STORAGE_CLASS("entando.k8s.operator.default.non.clustered.storage.class"),
-    ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE("entando.k8s.operator.compliance.mode"),
-    ENTANDO_ASSUME_EXTERNAL_HTTPS_PROVIDER("entando.assume.external.https.provider"),
-    ENTANDO_FORCE_EXTERNAL_ACCESS_TO_KEYCLOAK("entando.force.external.access.to.keycloak"),
-    ENTANDO_K8S_OPERATOR_PVC_ACCESSMODE_OVERRIDE("entando.k8s.operator.pvc.accessmode.override");
+public enum EntandoOperatorSpiConfigProperty implements ConfigProperty, NamedEnum {
 
-    private final String jvmSystemProperty;
+    ENTANDO_K8S_OPERATOR_DEFAULT_CLUSTERED_STORAGE_CLASS,
+    ENTANDO_K8S_OPERATOR_DEFAULT_NON_CLUSTERED_STORAGE_CLASS,
+    ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE,
+    ENTANDO_ASSUME_EXTERNAL_HTTPS_PROVIDER,
+    ENTANDO_FORCE_EXTERNAL_ACCESS_TO_KEYCLOAK,
+    ENTANDO_K8S_OPERATOR_PVC_ACCESSMODE_OVERRIDE,
+    ENTANDO_CA_SECRET_NAME,
+    ENTANDO_RESOURCE_NAMESPACE,
+    ENTANDO_RESOURCE_NAME,
+    ENTANDO_RESOURCE_KIND,
+    ENTANDO_CONTROLLER_POD_NAME,
+    ENTANDO_POD_COMPLETION_TIMEOUT_SECONDS,
+    ENTANDO_POD_READINESS_TIMEOUT_SECONDS,
+    ENTANDO_TIMEOUT_ADJUSTMENT_RATIO,
+    ENTANDO_POD_SHUTDOWN_TIMEOUT_SECONDS;
 
-    EntandoOperatorSpiConfigProperty(String jvmSystemProperty) {
-        this.jvmSystemProperty = jvmSystemProperty;
-    }
-
-    public String getJvmSystemProperty() {
-        return jvmSystemProperty;
-    }
 }

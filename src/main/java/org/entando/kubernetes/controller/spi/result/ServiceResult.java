@@ -25,4 +25,6 @@ public interface ServiceResult {
     String getPort();
 
     Service getService();
+
+    String getAdminSecretName();
 }

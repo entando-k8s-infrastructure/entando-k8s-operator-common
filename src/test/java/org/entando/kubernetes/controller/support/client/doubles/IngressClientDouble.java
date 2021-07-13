@@ -22,27 +22,29 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.entando.kubernetes.controller.support.client.DoneableIngress;
 import org.entando.kubernetes.controller.support.client.IngressClient;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class IngressClientDouble extends AbstractK8SClientDouble implements IngressClient {
 
-    public IngressClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
-        super(namespaces);
+    public IngressClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
+        super(namespaces, cluster);
     }
 
     @Override
-    public Ingress createIngress(EntandoCustomResource peerInNamespace, Ingress ingress) {
+    public synchronized Ingress createIngress(EntandoCustomResource peerInNamespace, Ingress ingress) {
         if (peerInNamespace == null) {
             return null;
         }
-        getNamespace(peerInNamespace).putIngress(ingress.getMetadata().getName(), ingress);
+        ingress.getMetadata().getName();
+        getNamespace(peerInNamespace).putIngress(ingress);
         return ingress;
     }
 
     @Override
     public DoneableIngress editIngress(EntandoCustomResource peerInNamespace, String name) {
         return new DoneableIngress(getNamespace(peerInNamespace).getIngress(name), item -> {
-            getNamespace(peerInNamespace).putIngress(item.getMetadata().getName(), item);
+            item.getMetadata().getName();
+            getNamespace(peerInNamespace).putIngress(item);
             return item;
         });
     }
@@ -56,13 +58,18 @@ public class IngressClientDouble extends AbstractK8SClientDouble implements Ingr
     }
 
     @Override
-    public Ingress addHttpPath(Ingress ingress, HTTPIngressPath httpIngressPath, Map<String, String> annotations) {
+    public synchronized Ingress addHttpPath(Ingress ingress, HTTPIngressPath httpIngressPath, Map<String, String> annotations) {
         if (ingress == null) {
             return null;
         }
-        ingress.getSpec().getRules().get(0).getHttp().getPaths().add(httpIngressPath);
-        ingress.getMetadata().getAnnotations().putAll(annotations);
-        return ingress;
+        final Ingress ingressToUpdate = getNamespace(ingress).getIngress(ingress.getMetadata().getName());
+        ingressToUpdate.getSpec().getRules().get(0).getHttp().getPaths().add(httpIngressPath);
+        if (ingressToUpdate.getMetadata().getAnnotations() == null) {
+            ingressToUpdate.getMetadata().setAnnotations(annotations);
+        } else {
+            ingressToUpdate.getMetadata().getAnnotations().putAll(annotations);
+        }
+        return ingressToUpdate;
     }
 
     @Override

@@ -16,29 +16,18 @@
 
 package org.entando.kubernetes.controller.spi.deployable;
 
-import static java.util.stream.Collectors.toList;
-
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import java.util.List;
 import java.util.Optional;
-import org.entando.kubernetes.controller.spi.container.IngressingContainer;
+import org.entando.kubernetes.controller.spi.common.MayRequireDelegateService;
 import org.entando.kubernetes.controller.spi.result.ExposedDeploymentResult;
 
-public interface IngressingDeployable<T extends ExposedDeploymentResult<T>> extends Deployable<T>, Ingressing<IngressingContainer> {
+public interface IngressingDeployable<T extends ExposedDeploymentResult<T>> extends Deployable<T>, MayRequireDelegateService {
+
+    boolean isIngressRequired();
 
     Optional<String> getFileUploadLimit();
 
     Optional<String> getTlsSecretName();
 
     Optional<String> getIngressHostName();
-
-    @Override
-    @JsonIgnore
-    default List<IngressingContainer> getIngressingContainers() {
-        return getContainers().stream()
-                .filter(IngressingContainer.class::isInstance)
-                .map(IngressingContainer.class::cast)
-                .collect(toList());
-    }
 
 }

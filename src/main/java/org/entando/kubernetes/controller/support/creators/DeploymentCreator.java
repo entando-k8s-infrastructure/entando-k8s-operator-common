@@ -16,6 +16,8 @@
 
 package org.entando.kubernetes.controller.support.creators;
 
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
+
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.ContainerPort;
@@ -33,7 +35,6 @@ import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentSpec;
-import io.fabric8.kubernetes.api.model.apps.DeploymentStatus;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -41,28 +42,30 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
+import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.container.ConfigurableResourceContainer;
-import org.entando.kubernetes.controller.spi.container.DbAware;
+import org.entando.kubernetes.controller.spi.container.DbAwareContainer;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
 import org.entando.kubernetes.controller.spi.container.HasHealthCommand;
 import org.entando.kubernetes.controller.spi.container.HasWebContext;
-import org.entando.kubernetes.controller.spi.container.KeycloakAwareContainer;
 import org.entando.kubernetes.controller.spi.container.ParameterizableContainer;
-import org.entando.kubernetes.controller.spi.container.PersistentVolumeAware;
+import org.entando.kubernetes.controller.spi.container.PersistentVolumeAwareContainer;
 import org.entando.kubernetes.controller.spi.container.SecretToMount;
-import org.entando.kubernetes.controller.spi.container.TrustStoreAware;
+import org.entando.kubernetes.controller.spi.container.SsoAwareContainer;
+import org.entando.kubernetes.controller.spi.container.TrustStoreAwareContainer;
 import org.entando.kubernetes.controller.spi.deployable.Deployable;
 import org.entando.kubernetes.controller.support.client.DeploymentClient;
 import org.entando.kubernetes.controller.support.common.EntandoImageResolver;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class DeploymentCreator extends AbstractK8SResourceCreator {
 
-    public static final String VOLUME_SUFFIX = "-volume";
-    public static final String DEPLOYMENT_SUFFIX = "-deployment";
-    public static final String CONTAINER_SUFFIX = "-container";
-    public static final String PORT_SUFFIX = "-port";
+    public static final String VOLUME_SUFFIX = "volume";
+    public static final String CONTAINER_SUFFIX = "container";
+    public static final String PORT_SUFFIX = "port";
+    public static final int DEFAULT_STARTUP_TIME = 120;
     private Deployment deployment;
 
     public DeploymentCreator(EntandoCustomResource entandoCustomResource) {
@@ -70,18 +73,12 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
     }
 
     public Deployment createDeployment(EntandoImageResolver imageResolver, DeploymentClient deploymentClient, Deployable<?> deployable) {
-        deployment = deploymentClient
-                .createOrPatchDeployment(entandoCustomResource,
-                        newDeployment(imageResolver, deployable, deploymentClient.supportsStartupProbes()));
-        return deployment;
-    }
-
-    public DeploymentStatus reloadDeployment(DeploymentClient deployments) {
-        if (deployment == null) {
-            return null;
-        }
-        deployment = deployments.loadDeployment(entandoCustomResource, deployment.getMetadata().getName());
-        return deployment.getStatus() == null ? new DeploymentStatus() : deployment.getStatus();
+        final Deployment builtDeployment = newDeployment(imageResolver, deployable, deploymentClient.supportsStartupProbes());
+        this.deployment = withDiagnostics(
+                () -> deploymentClient.createOrPatchDeployment(entandoCustomResource, builtDeployment,
+                        EntandoOperatorSpiConfig.getPodShutdownTimeoutSeconds()),
+                () -> builtDeployment);
+        return this.deployment;
     }
 
     public Deployment getDeployment() {
@@ -89,17 +86,18 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
     }
 
     private DeploymentSpec buildDeploymentSpec(EntandoImageResolver imageResolver, Deployable<?> deployable, boolean supportStartupProbe) {
+        final String nameQualifier = deployable.getQualifier().orElse(null);
         return new DeploymentBuilder()
                 .withNewSpec()
                 .withNewSelector()
-                .withMatchLabels(labelsFromResource(deployable.getNameQualifier()))
+                .withMatchLabels(labelsFromResource(nameQualifier))
                 .endSelector()
                 //We don't support 0 because we will be waiting for a pod after this
                 .withReplicas(Math.max(1, deployable.getReplicas()))
                 .withNewTemplate()
                 .withNewMetadata()
-                .withName(resolveName(deployable.getNameQualifier(), "-pod"))
-                .withLabels(labelsFromResource(deployable.getNameQualifier()))
+                .withName(resolveName(nameQualifier, "pod"))
+                .withLabels(labelsFromResource(nameQualifier))
                 .endMetadata()
                 .withNewSpec()
                 .withSecurityContext(buildSecurityContext(deployable))
@@ -126,19 +124,20 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
                 .flatMap(Collection::stream)
                 .collect(Collectors.toList());
 
-        if (deployable.getContainers().stream().anyMatch(TrustStoreAware.class::isInstance) && EntandoOperatorConfig
+        if (deployable.getContainers().stream().anyMatch(TrustStoreAwareContainer.class::isInstance) && EntandoOperatorSpiConfig
                 .getCertificateAuthoritySecretName().isPresent()) {
-            volumeList.add(newSecretVolume(TrustStoreAware.DEFAULT_TRUSTSTORE_SECRET_TO_MOUNT));
+            volumeList.add(newSecretVolume(TrustStoreAwareContainer.DEFAULT_TRUSTSTORE_SECRET_TO_MOUNT));
         }
         return volumeList;
     }
 
     private List<Volume> buildVolumesForContainer(DeployableContainer container) {
         List<Volume> volumes = new ArrayList<>();
-        if (container instanceof PersistentVolumeAware) {
+        if (container instanceof PersistentVolumeAwareContainer) {
             volumes.add(new VolumeBuilder()
                     .withName(volumeName(container))
-                    .withNewPersistentVolumeClaim(resolveName(container.getNameQualifier(), "-pvc"), false)
+                    .withNewPersistentVolumeClaim(
+                            NameUtils.standardPersistentVolumeClaim(entandoCustomResource, container.getNameQualifier()), false)
                     .build());
         }
         volumes.addAll(container.getSecretsToMount().stream()
@@ -149,7 +148,7 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     private Volume newSecretVolume(SecretToMount secretToMount) {
         return new VolumeBuilder()
-                .withName(secretToMount.getSecretName() + VOLUME_SUFFIX)
+                .withName(secretToMount.getSecretName() + "-" + VOLUME_SUFFIX)
                 .withNewSecret()
                 .withSecretName(secretToMount.getSecretName())
                 .endSecret()
@@ -162,9 +161,9 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
                 .collect(Collectors.toList());
     }
 
-    private Container newContainer(EntandoImageResolver imageResolver,
-            DeployableContainer deployableContainer, boolean supportStartupProbes) {
-        return new ContainerBuilder().withName(deployableContainer.getNameQualifier() + CONTAINER_SUFFIX)
+    private Container newContainer(EntandoImageResolver imageResolver, DeployableContainer deployableContainer,
+            boolean supportStartupProbes) {
+        return new ContainerBuilder().withName(deployableContainer.getNameQualifier() + "-" + CONTAINER_SUFFIX)
                 .withImage(imageResolver.determineImageUri(deployableContainer.getDockerImageInfo()))
                 .withImagePullPolicy(EntandoOperatorConfig.getPullPolicyOverride().orElse("IfNotPresent"))
                 .withPorts(buildPorts(deployableContainer))
@@ -182,7 +181,7 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     private List<ContainerPort> buildPorts(DeployableContainer deployableContainer) {
         List<ContainerPort> result = new ArrayList<>();
-        result.add(new ContainerPortBuilder().withName(deployableContainer.getNameQualifier() + PORT_SUFFIX)
+        result.add(new ContainerPortBuilder().withName(deployableContainer.getNameQualifier() + "-" + PORT_SUFFIX)
                 .withContainerPort(deployableContainer.getPrimaryPort()).withProtocol("TCP").build());
         result.addAll(deployableContainer.getAdditionalPorts().stream()
                 .map(portSpec -> new ContainerPortBuilder()
@@ -226,12 +225,13 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
                 deployableContainer.getSecretsToMount().stream()
                         .map(this::newSecretVolumeMount)
                         .collect(Collectors.toList()));
-        if (deployableContainer instanceof TrustStoreAware && EntandoOperatorConfig.getCertificateAuthoritySecretName().isPresent()) {
+        if (deployableContainer instanceof TrustStoreAwareContainer && EntandoOperatorSpiConfig.getCertificateAuthoritySecretName()
+                .isPresent()) {
 
-            volumeMounts.add(newSecretVolumeMount(TrustStoreAware.DEFAULT_TRUSTSTORE_SECRET_TO_MOUNT));
+            volumeMounts.add(newSecretVolumeMount(TrustStoreAwareContainer.DEFAULT_TRUSTSTORE_SECRET_TO_MOUNT));
         }
-        if (deployableContainer instanceof PersistentVolumeAware) {
-            String volumeMountPath = ((PersistentVolumeAware) deployableContainer).getVolumeMountPath();
+        if (deployableContainer instanceof PersistentVolumeAwareContainer) {
+            String volumeMountPath = ((PersistentVolumeAwareContainer) deployableContainer).getVolumeMountPath();
             volumeMounts.add(
                     new VolumeMountBuilder()
                             .withMountPath(volumeMountPath)
@@ -244,30 +244,36 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     private VolumeMount newSecretVolumeMount(SecretToMount s) {
         return new VolumeMountBuilder()
-                .withName(s.getSecretName() + VOLUME_SUFFIX)
+                .withName(s.getSecretName() + "-" + VOLUME_SUFFIX)
                 .withMountPath(s.getMountPath()).withReadOnly(true).build();
     }
 
     private Probe buildReadinessProbe(DeployableContainer deployableContainer, boolean assumeStartupProbe) {
-        int maximumStartupTimeSeconds = deployableContainer.getMaximumStartupTimeSeconds().orElse(120);
+        int maximumStartupTimeSeconds = calculateMaximumStartupTimeSeconds(deployableContainer);
         ProbeBuilder builder = buildHealthProbe(deployableContainer);
         if (assumeStartupProbe) {
             //No delay, only allow one failure for accuracy, check every 10 seconds
             builder = builder.withPeriodSeconds(10).withFailureThreshold(1);
         } else {
-            //Delay half of the maximum allowed startup time
-            //allow for four failures that are spaced out enough time for the
+            //Delay for a 6th of the maximum allowed startup time
+            //allow for 5 failures that are spaced out enough time for the
             //container only to fail after the maximum startup time
-            builder = builder.withInitialDelaySeconds(maximumStartupTimeSeconds / 3)
-                    .withPeriodSeconds(maximumStartupTimeSeconds / 6)
-                    .withFailureThreshold(3);
+            final Integer numberOfFailures = EntandoOperatorConfig.getNumberOfReadinessFailures().orElse(6);
+            builder = builder.withInitialDelaySeconds(maximumStartupTimeSeconds / numberOfFailures)
+                    .withPeriodSeconds(maximumStartupTimeSeconds / numberOfFailures)
+                    .withFailureThreshold(numberOfFailures - 1);
         }
-        //Healthchecks should be fast but we can be a bit forgiving for readiness probes
+        //Liveness checks should be fast but we can be a bit forgiving for readiness probes
         return builder.withTimeoutSeconds(5).build();
     }
 
+    private Integer calculateMaximumStartupTimeSeconds(DeployableContainer deployableContainer) {
+        return Math.round(deployableContainer.getMaximumStartupTimeSeconds().orElse(DEFAULT_STARTUP_TIME)
+                * EntandoOperatorSpiConfig.getTimeoutAdjustmentRatio());
+    }
+
     private Probe buildLivenessProbe(DeployableContainer deployableContainer, boolean assumeStartupProbe) {
-        int maximumStartupTimeSeconds = deployableContainer.getMaximumStartupTimeSeconds().orElse(120);
+        int maximumStartupTimeSeconds = calculateMaximumStartupTimeSeconds(deployableContainer);
         ProbeBuilder builder = buildHealthProbe(deployableContainer).withPeriodSeconds(10).withFailureThreshold(1).withTimeoutSeconds(3);
         if (!assumeStartupProbe) {
             //Delay the entire maximum allowed startup time and a bit. We don't want the container to get caught in a crash loop
@@ -278,7 +284,7 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     private Probe buildStartupProbe(DeployableContainer deployableContainer, boolean assumeStartupProbe) {
         if (assumeStartupProbe) {
-            int maximumStartupTimeSeconds = deployableContainer.getMaximumStartupTimeSeconds().orElse(120);
+            int maximumStartupTimeSeconds = calculateMaximumStartupTimeSeconds(deployableContainer);
             ProbeBuilder builder = buildHealthProbe(deployableContainer);
             //Stretch out the periodSeconds to allow for 10 attempts during startup
             builder = builder.withPeriodSeconds(maximumStartupTimeSeconds / 10)
@@ -311,18 +317,18 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     private List<EnvVar> determineEnvironmentVariables(DeployableContainer container) {
         ArrayList<EnvVar> vars = new ArrayList<>();
-        if (container instanceof KeycloakAwareContainer) {
-            KeycloakAwareContainer keycloakAware = (KeycloakAwareContainer) container;
-            vars.addAll(keycloakAware.getKeycloakVariables());
+        if (container instanceof SsoAwareContainer) {
+            SsoAwareContainer keycloakAware = (SsoAwareContainer) container;
+            vars.addAll(keycloakAware.getSsoVariables());
         }
-        if (container instanceof DbAware) {
-            vars.addAll(((DbAware) container).getDatabaseConnectionVariables());
+        if (container instanceof DbAwareContainer) {
+            vars.addAll(((DbAwareContainer) container).getDatabaseConnectionVariables());
         }
         if (container instanceof HasWebContext) {
             vars.add(new EnvVar("SERVER_SERVLET_CONTEXT_PATH", ((HasWebContext) container).getWebContextPath(), null));
         }
-        if (container instanceof TrustStoreAware && EntandoOperatorConfig.getCertificateAuthoritySecretName().isPresent()) {
-            vars.addAll(((TrustStoreAware) container).getTrustStoreVariables());
+        if (container instanceof TrustStoreAwareContainer && EntandoOperatorSpiConfig.getCertificateAuthoritySecretName().isPresent()) {
+            vars.addAll(((TrustStoreAwareContainer) container).getTrustStoreVariables());
         }
         vars.add(new EnvVar("CONNECTION_CONFIG_ROOT", DeployableContainer.ENTANDO_SECRET_MOUNTS_ROOT, null));
         vars.addAll(container.getEnvironmentVariables());
@@ -346,8 +352,9 @@ public class DeploymentCreator extends AbstractK8SResourceCreator {
 
     protected Deployment newDeployment(EntandoImageResolver imageResolver, Deployable<?> deployable, boolean supportStartupProbes) {
         return new DeploymentBuilder()
-                .withMetadata(fromCustomResource(true, resolveName(deployable.getNameQualifier(), DEPLOYMENT_SUFFIX),
-                        deployable.getNameQualifier()))
+                .withMetadata(
+                        fromCustomResource(true, resolveName(deployable.getQualifier().orElse(null), NameUtils.DEFAULT_DEPLOYMENT_SUFFIX),
+                                deployable.getQualifier().orElse(null)))
                 .withSpec(buildDeploymentSpec(imageResolver, deployable, supportStartupProbes))
                 .build();
     }

@@ -20,12 +20,12 @@ import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.Secret;
 import java.util.concurrent.ConcurrentHashMap;
 import org.entando.kubernetes.controller.support.client.SecretClient;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class SecretClientDouble extends AbstractK8SClientDouble implements SecretClient {
 
-    public SecretClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
-        super(namespaces);
+    public SecretClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
+        super(namespaces, cluster);
     }
 
     @Override
@@ -49,9 +49,6 @@ public class SecretClientDouble extends AbstractK8SClientDouble implements Secre
     }
 
     @Override
-    //Will remove once we have propagate latest version to all downstream projects
-    @SuppressWarnings("deprecated")
-    @Deprecated
     public ConfigMap loadControllerConfigMap(String configMapName) {
         return getNamespace(CONTROLLER_NAMESPACE).getConfigMap(configMapName);
     }

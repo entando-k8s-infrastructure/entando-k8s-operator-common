@@ -17,7 +17,7 @@
 package org.entando.kubernetes.controller.spi.container;
 
 import java.util.Optional;
-import org.entando.kubernetes.model.EntandoResourceRequirements;
+import org.entando.kubernetes.model.common.EntandoResourceRequirements;
 
 public interface ConfigurableResourceContainer extends DeployableContainer {
 

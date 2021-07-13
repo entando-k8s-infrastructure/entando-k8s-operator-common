@@ -16,8 +16,8 @@
 
 package org.entando.kubernetes.controller.support.client;
 
-import org.entando.kubernetes.controller.spi.container.KeycloakClientConfig;
-import org.entando.kubernetes.model.plugin.Permission;
+import org.entando.kubernetes.controller.spi.deployable.SsoClientConfig;
+import org.entando.kubernetes.model.common.Permission;
 
 public interface SimpleKeycloakClient {
 
@@ -27,9 +27,9 @@ public interface SimpleKeycloakClient {
 
     void createPublicClient(String realm, String clientId, String domain);
 
-    String prepareClientAndReturnSecret(KeycloakClientConfig config);
+    String prepareClientAndReturnSecret(SsoClientConfig config);
 
-    void updateClient(KeycloakClientConfig config);
+    void updateClient(SsoClientConfig config);
 
     void assignRoleToClientServiceAccount(String realm, String serviceAccountClientId, Permission serviceRole);
 }

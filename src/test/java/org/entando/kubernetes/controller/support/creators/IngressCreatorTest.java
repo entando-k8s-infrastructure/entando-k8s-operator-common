@@ -19,6 +19,7 @@ package org.entando.kubernetes.controller.support.creators;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.examples.springboot.SpringBootDeployable;
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 import org.entando.kubernetes.controller.support.client.doubles.SimpleK8SClientDouble;
@@ -26,6 +27,7 @@ import org.entando.kubernetes.controller.support.common.EntandoOperatorConfigPro
 import org.entando.kubernetes.model.app.EntandoApp;
 import org.entando.kubernetes.model.app.EntandoAppBuilder;
 import org.entando.kubernetes.model.app.EntandoAppSpec;
+import org.entando.kubernetes.model.common.ServerStatus;
 import org.entando.kubernetes.test.common.InProcessTestData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +49,7 @@ class IngressCreatorTest implements InProcessTestData {
     @AfterEach
     @BeforeEach
     void cleanUp() {
-        System.getProperties().remove(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS.getJvmSystemProperty());
+        System.getProperties().remove(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS.getJvmSystemProperty());
     }
 
     @Test
@@ -56,7 +58,7 @@ class IngressCreatorTest implements InProcessTestData {
         ServiceCreator serviceCreator = new ServiceCreator(entandoApp);
         serviceCreator.createService(client.services(), deployable);
         IngressCreator creator = new IngressCreator(entandoApp);
-        creator.createIngress(client.ingresses(), deployable, serviceCreator.getService());
+        creator.createIngress(client.ingresses(), deployable, serviceCreator.getService(), new ServerStatus(NameUtils.MAIN_QUALIFIER));
         assertThat(creator.getIngress().getSpec().getRules().get(0).getHost(), is("originalhost.com"));
         assertThat(creator.getIngress().getSpec().getTls().get(0).getHosts().get(0), is("originalhost.com"));
         assertThat(creator.getIngress().getSpec().getTls().get(0).getSecretName(), is("original-tls-secret"));
@@ -68,7 +70,8 @@ class IngressCreatorTest implements InProcessTestData {
                 .build();
         IngressCreator editingCreator = new IngressCreator(newEntandoApp);
         editingCreator
-                .createIngress(client.ingresses(), new SpringBootDeployable<>(newEntandoApp, null, null), serviceCreator.getService());
+                .createIngress(client.ingresses(), new SpringBootDeployable<>(newEntandoApp, null, null), serviceCreator.getService(),
+                        new ServerStatus(NameUtils.MAIN_QUALIFIER));
         assertThat(editingCreator.getIngress().getSpec().getRules().get(0).getHost(), is("newhost.com"));
         assertThat(editingCreator.getIngress().getSpec().getTls().get(0).getHosts().get(0), is("newhost.com"));
         assertThat(editingCreator.getIngress().getSpec().getTls().get(0).getSecretName(), is("new-tls-secret"));

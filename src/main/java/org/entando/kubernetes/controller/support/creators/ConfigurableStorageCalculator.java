@@ -17,15 +17,15 @@
 package org.entando.kubernetes.controller.support.creators;
 
 import org.entando.kubernetes.controller.spi.container.ConfigurableResourceContainer;
-import org.entando.kubernetes.controller.spi.container.PersistentVolumeAware;
-import org.entando.kubernetes.model.EntandoResourceRequirements;
+import org.entando.kubernetes.controller.spi.container.PersistentVolumeAwareContainer;
+import org.entando.kubernetes.model.common.EntandoResourceRequirements;
 
 public class ConfigurableStorageCalculator extends StorageCalculator {
 
     private final EntandoResourceRequirements resourceRequirements;
 
     public ConfigurableStorageCalculator(ConfigurableResourceContainer container) {
-        super((PersistentVolumeAware) container);
+        super((PersistentVolumeAwareContainer) container);
         this.resourceRequirements = container.getResourceRequirementsOverride().orElse(new EntandoResourceRequirements());
     }
 

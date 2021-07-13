@@ -66,6 +66,6 @@ class NameUtilsTest {
         assertThat(NameUtils.controllerNameOf(entandoApp), is("entando-k8s-app-controller"));
         EntandoDatabaseService entandoDatabaseService = new EntandoDatabaseService();
         entandoApp.setKind("EntandoDatabaseService");
-        assertThat(NameUtils.controllerNameOf(entandoApp), is("entando-k8s-database-service-controller"));
+        assertThat(NameUtils.controllerNameOf(entandoDatabaseService), is("entando-k8s-database-service-controller"));
     }
 }

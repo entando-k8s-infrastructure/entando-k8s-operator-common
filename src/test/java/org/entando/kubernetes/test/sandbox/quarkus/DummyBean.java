@@ -17,13 +17,15 @@
 package org.entando.kubernetes.test.sandbox.quarkus;
 
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClient;
-import io.fabric8.kubernetes.client.dsl.internal.CustomResourceOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.MixedOperation;
+import io.fabric8.kubernetes.client.dsl.Resource;
 import io.quarkus.runtime.StartupEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -32,24 +34,21 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.inject.Inject;
 import javax.ws.rs.ClientErrorException;
-import org.entando.kubernetes.client.DefaultIngressClient;
-import org.entando.kubernetes.client.DefaultKeycloakClient;
-import org.entando.kubernetes.client.DefaultSimpleK8SClient;
-import org.entando.kubernetes.client.integrationtesthelpers.HttpTestHelper;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
 import org.entando.kubernetes.controller.spi.container.IngressingContainer;
-import org.entando.kubernetes.controller.spi.container.KeycloakClientConfig;
 import org.entando.kubernetes.controller.spi.container.KeycloakName;
-import org.entando.kubernetes.controller.spi.examples.SampleExposedDeploymentResult;
+import org.entando.kubernetes.controller.spi.deployable.SsoClientConfig;
+import org.entando.kubernetes.controller.spi.result.DefaultExposedDeploymentResult;
+import org.entando.kubernetes.controller.support.client.impl.DefaultIngressClient;
+import org.entando.kubernetes.controller.support.client.impl.DefaultKeycloakClient;
+import org.entando.kubernetes.controller.support.client.impl.DefaultSimpleK8SClient;
+import org.entando.kubernetes.controller.support.client.impl.integrationtesthelpers.HttpTestHelper;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfigProperty;
 import org.entando.kubernetes.controller.support.creators.IngressCreator;
 import org.entando.kubernetes.controller.support.spibase.IngressingDeployableBase;
-import org.entando.kubernetes.model.DbmsVendor;
-import org.entando.kubernetes.model.keycloakserver.DoneableEntandoKeycloakServer;
+import org.entando.kubernetes.model.common.DbmsVendor;
 import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServer;
 import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServerBuilder;
-import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServerList;
-import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServerOperationFactory;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.Keycloak;
@@ -76,7 +75,10 @@ public class DummyBean {
     private final KubernetesClient kubernetesClient;
     private final DefaultSimpleK8SClient simpleK8SClient;
     private final String domainSuffix;
-    private final CustomResourceOperationsImpl<EntandoKeycloakServer, EntandoKeycloakServerList, DoneableEntandoKeycloakServer> operations;
+    private final MixedOperation<
+            EntandoKeycloakServer,
+            KubernetesResourceList<EntandoKeycloakServer>,
+            Resource<EntandoKeycloakServer>> operations;
     private DefaultKeycloakClient keycloakClient;
     private EntandoKeycloakServer keycloakServer;
 
@@ -85,7 +87,7 @@ public class DummyBean {
         this.kubernetesClient = kubernetesClient;
         this.simpleK8SClient = new DefaultSimpleK8SClient(kubernetesClient);
         this.domainSuffix = IngressCreator.determineRoutingSuffix(DefaultIngressClient.resolveMasterHostname(kubernetesClient));
-        this.operations = EntandoKeycloakServerOperationFactory.produceAllEntandoKeycloakServers(kubernetesClient);
+        this.operations = kubernetesClient.customResources(EntandoKeycloakServer.class);
         this.keycloakServer = new EntandoKeycloakServerBuilder().editMetadata()
                 .withName("test-kc")
                 .withNamespace(KC_TEST_NAMESPACE)
@@ -135,12 +137,12 @@ public class DummyBean {
         //And  I have ensured that a specific real is available
         kc.ensureRealm(MY_REALM);
         //And I have created a client
-        kc.prepareClientAndReturnSecret(new KeycloakClientConfig(MY_REALM, EXISTING_CLIENT, EXISTING_CLIENT)
+        kc.prepareClientAndReturnSecret(new SsoClientConfig(MY_REALM, EXISTING_CLIENT, EXISTING_CLIENT)
                 .withRedirectUri("http://existingclient.domain.com/*")
                 .withRole(EXISTING_ROLE)
         );
         //When I create the public client in this realm
-        kc.prepareClientAndReturnSecret(new KeycloakClientConfig(MY_REALM, MY_CLIENT, MY_CLIENT)
+        kc.prepareClientAndReturnSecret(new SsoClientConfig(MY_REALM, MY_CLIENT, MY_CLIENT)
                 .withRedirectUri("http://test.domain.com/*")
                 .withWebOrigin("http://test.domain.com")
                 .withPermission(EXISTING_CLIENT, EXISTING_ROLE)
@@ -270,7 +272,7 @@ public class DummyBean {
         ResteasyProviderFactory.setInstance(instance);
     }
 
-    private static class TestKeycloakDeployable implements IngressingDeployableBase<SampleExposedDeploymentResult> {
+    private static class TestKeycloakDeployable implements IngressingDeployableBase<DefaultExposedDeploymentResult> {
 
         private final List<DeployableContainer> containers = Arrays.asList(new TestKeycloakContainer());
         private final EntandoKeycloakServer keycloakServer;
@@ -295,8 +297,8 @@ public class DummyBean {
         }
 
         @Override
-        public String getNameQualifier() {
-            return "server";
+        public Optional<String> getQualifier() {
+            return Optional.of("server");
         }
 
         @Override
@@ -305,8 +307,8 @@ public class DummyBean {
         }
 
         @Override
-        public SampleExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
-            return new SampleExposedDeploymentResult(pod, service, ingress);
+        public DefaultExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
+            return new DefaultExposedDeploymentResult(pod, service, ingress);
         }
 
         @Override

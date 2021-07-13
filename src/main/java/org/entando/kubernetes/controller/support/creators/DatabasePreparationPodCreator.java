@@ -29,22 +29,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
+import org.entando.kubernetes.controller.spi.common.LabelNames;
 import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.common.ResourceUtils;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
 import org.entando.kubernetes.controller.spi.container.DatabasePopulator;
 import org.entando.kubernetes.controller.spi.container.DatabaseSchemaConnectionInfo;
-import org.entando.kubernetes.controller.spi.container.DbAware;
+import org.entando.kubernetes.controller.spi.container.DbAwareContainer;
 import org.entando.kubernetes.controller.spi.deployable.DbAwareDeployable;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
 import org.entando.kubernetes.controller.support.client.SecretClient;
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 import org.entando.kubernetes.controller.support.common.EntandoImageResolver;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfigProperty;
-import org.entando.kubernetes.controller.support.common.KubeUtils;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
 
@@ -55,11 +57,15 @@ public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
     public Pod runToCompletion(
             SimpleK8SClient<?> client,
             DbAwareDeployable<?> dbAwareDeployable,
-            EntandoImageResolver entandoImageResolver) {
+            EntandoImageResolver entandoImageResolver) throws TimeoutException {
         client.pods().removeAndWait(
-                entandoCustomResource.getMetadata().getNamespace(), buildUniqueLabels(dbAwareDeployable.getNameQualifier()));
+                entandoCustomResource.getMetadata().getNamespace(),
+                buildUniqueLabels(dbAwareDeployable.getQualifier().orElse(NameUtils.MAIN_QUALIFIER)),
+                EntandoOperatorSpiConfig.getPodShutdownTimeoutSeconds());
         return client.pods().runToCompletion(
-                buildJobPod(client.secrets(), entandoImageResolver, dbAwareDeployable, dbAwareDeployable.getNameQualifier()));
+                buildJobPod(client.secrets(), entandoImageResolver, dbAwareDeployable,
+                        dbAwareDeployable.getQualifier().orElse(NameUtils.MAIN_QUALIFIER)),
+                EntandoOperatorSpiConfig.getPodCompletionTimeoutSeconds());
     }
 
     private Pod buildJobPod(SecretClient secretClient, EntandoImageResolver entandoImageResolver, DbAwareDeployable<?> dbAwareDeployable,
@@ -83,26 +89,29 @@ public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
 
     private Map<String, String> buildUniqueLabels(String qualifier) {
         Map<String, String> labelsFromResource = labelsFromResource();
-        labelsFromResource.put(KubeUtils.JOB_KIND_LABEL_NAME, KubeUtils.JOB_KIND_DB_PREPARATION);
-        labelsFromResource.put(KubeUtils.DEPLOYMENT_QUALIFIER_LABEL_NAME, qualifier);
+        labelsFromResource.put(LabelNames.JOB_KIND.getName(), LabelNames.JOB_KIND_DB_PREPARATION.getName());
+        labelsFromResource.put(LabelNames.DEPLOYMENT_QUALIFIER.getName(), qualifier);
         return labelsFromResource;
     }
 
     private List<Container> buildContainers(EntandoImageResolver entandoImageResolver, SecretClient secretClient,
             DbAwareDeployable<?> deployable) {
         List<Container> result = new ArrayList<>();
-        for (DbAware dbAware : deployable.getDbAwareContainers()) {
-            Optional<DatabasePopulator> databasePopulator = dbAware.getDatabasePopulator();
-            prepareContainersToCreateSchemas(secretClient, entandoImageResolver, dbAware, result);
-            databasePopulator
-                    .ifPresent(dbp -> result.add(prepareContainerToPopulateSchemas(entandoImageResolver, dbp, dbAware.getNameQualifier())));
-        }
+
+        deployable.getContainers().stream().filter(DbAwareContainer.class::isInstance).map(DbAwareContainer.class::cast)
+                .forEach(dbAware -> {
+                    Optional<DatabasePopulator> databasePopulator = dbAware.getDatabasePopulator();
+                    prepareContainersToCreateSchemas(secretClient, entandoImageResolver, dbAware, result);
+                    databasePopulator
+                            .ifPresent(dbp -> result
+                                    .add(prepareContainerToPopulateSchemas(entandoImageResolver, dbp, dbAware.getNameQualifier())));
+                });
         return result;
     }
 
     private void prepareContainersToCreateSchemas(SecretClient secretClient,
             EntandoImageResolver entandoImageResolver,
-            DbAware dbAware, List<Container> containerList) {
+            DbAwareContainer dbAware, List<Container> containerList) {
         for (DatabaseSchemaConnectionInfo dbSchemaInfo : dbAware.getSchemaConnectionInfo()) {
             containerList.add(buildContainerToCreateSchema(entandoImageResolver, dbSchemaInfo));
             createSchemaSecret(secretClient, dbSchemaInfo.getSchemaSecret());
@@ -138,7 +147,7 @@ public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
     }
 
     private List<EnvVar> buildEnvironment(DatabaseSchemaConnectionInfo schemaConnectionInfo) {
-        DatabaseServiceResult databaseDeployment = schemaConnectionInfo.getDatabaseServiceResult();
+        DatabaseConnectionInfo databaseDeployment = schemaConnectionInfo.getDatabaseServiceResult();
         List<EnvVar> result = new ArrayList<>();
         result.add(new EnvVar("DATABASE_SERVER_HOST", databaseDeployment.getInternalServiceHostname(), null));
         result.add(new EnvVar("DATABASE_SERVER_PORT", databaseDeployment.getPort(), null));
@@ -147,14 +156,14 @@ public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
         result.add(new EnvVar("DATABASE_NAME", databaseDeployment.getDatabaseName(), null));
         lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_FORCE_DB_PASSWORD_RESET).ifPresent(s ->
                 result.add(new EnvVar("FORCE_PASSWORD_RESET", s, null)));
-        result.add(new EnvVar("DATABASE_VENDOR", databaseDeployment.getVendor().getVendorConfig().getName(), null));
+        result.add(new EnvVar("DATABASE_VENDOR", databaseDeployment.getVendor().getName(), null));
         result.add(new EnvVar("DATABASE_SCHEMA_COMMAND", "CREATE_SCHEMA", null));
         result.add(new EnvVar("DATABASE_USER", null,
                 SecretUtils.secretKeyRef(schemaConnectionInfo.getSchemaSecretName(), SecretUtils.USERNAME_KEY)));
         result.add(new EnvVar("DATABASE_PASSWORD", null,
                 SecretUtils.secretKeyRef(schemaConnectionInfo.getSchemaSecretName(), SecretUtils.PASSSWORD_KEY)));
         databaseDeployment.getTablespace().ifPresent(s -> result.add(new EnvVar("TABLESPACE", s, null)));
-        if (!databaseDeployment.getJdbcParameters().isEmpty()) {
+        if (Optional.ofNullable(databaseDeployment.getJdbcParameters()).map(params -> !params.isEmpty()).orElse(false)) {
             result.add(new EnvVar("JDBC_PARAMETERS", databaseDeployment.getJdbcParameters().entrySet()
                     .stream()
                     .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -164,8 +173,8 @@ public class DatabasePreparationPodCreator extends AbstractK8SResourceCreator {
 
     }
 
-    private EnvVarSource buildSecretKeyRef(DatabaseServiceResult databaseDeployment, String configKey) {
-        return SecretUtils.secretKeyRef(databaseDeployment.getDatabaseSecretName(), configKey);
+    private EnvVarSource buildSecretKeyRef(DatabaseConnectionInfo databaseDeployment, String configKey) {
+        return SecretUtils.secretKeyRef(databaseDeployment.getAdminSecretName(), configKey);
     }
 
 }

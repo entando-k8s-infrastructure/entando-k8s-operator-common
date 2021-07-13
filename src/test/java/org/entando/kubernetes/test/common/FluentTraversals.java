@@ -16,6 +16,7 @@
 
 package org.entando.kubernetes.test.common;
 
+import static java.lang.String.format;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 
@@ -39,12 +40,13 @@ import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.api.model.extensions.IngressBackend;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.entando.kubernetes.controller.spi.common.DbmsDockerVendorStrategy;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
 import org.entando.kubernetes.controller.spi.container.KeycloakName;
 import org.entando.kubernetes.controller.spi.container.SpringBootDeployableContainer;
-import org.entando.kubernetes.model.DbmsVendor;
+import org.entando.kubernetes.model.common.DbmsVendor;
 import org.hamcrest.Matchers;
 
 public interface FluentTraversals {
@@ -199,7 +201,12 @@ public interface FluentTraversals {
             return list.stream().filter(this::match)
                     .findFirst()
                     .orElseThrow(
-                            AssertionError::new);
+                            () -> {
+                                throw new AssertionError(format("Could not find '%s'. Available items: %s", this.name,
+                                        list.stream().map(this::getName).collect(
+                                                Collectors.joining(","))));
+                            }
+                    );
         }
 
         private boolean match(Object namedObject) {

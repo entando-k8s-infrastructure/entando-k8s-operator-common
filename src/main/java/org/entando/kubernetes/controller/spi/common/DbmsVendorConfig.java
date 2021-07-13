@@ -17,7 +17,7 @@
 package org.entando.kubernetes.controller.spi.common;
 
 import java.util.Locale;
-import org.entando.kubernetes.model.DbmsVendor;
+import org.entando.kubernetes.model.common.DbmsVendor;
 
 public enum DbmsVendorConfig {
     MYSQL("org.hibernate.dialect.MySQL5InnoDBDialect", 3306, "root",

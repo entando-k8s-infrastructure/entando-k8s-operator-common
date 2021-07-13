@@ -22,64 +22,46 @@ public enum EntandoOperatorConfigProperty implements ConfigProperty {
     /*
     Config to resolve Entando Docker Images
      */
-    ENTANDO_DOCKER_IMAGE_VERSION_FALLBACK("entando.docker.image.version.fallback"),
-    ENTANDO_DOCKER_IMAGE_VERSION_OVERRIDE("entando.docker.image.version.override"),
-    ENTANDO_DOCKER_REGISTRY_FALLBACK("entando.docker.registry.fallback"),
-    ENTANDO_DOCKER_REGISTRY_OVERRIDE("entando.docker.registry.override"),
-    ENTANDO_DOCKER_IMAGE_ORG_FALLBACK("entando.docker.image.org.fallback"),
-    ENTANDO_DOCKER_IMAGE_ORG_OVERRIDE("entando.docker.image.org.override"),
-    ENTANDO_DOCKER_IMAGE_INFO_CONFIGMAP("entando.docker.image.info.configmap"),
-    ENTANDO_DOCKER_IMAGE_INFO_NAMESPACE("entando.docker.image.info.namespace"),
+    ENTANDO_DOCKER_IMAGE_VERSION_FALLBACK,
+    ENTANDO_DOCKER_IMAGE_VERSION_OVERRIDE,
+    ENTANDO_DOCKER_REGISTRY_FALLBACK,
+    ENTANDO_DOCKER_REGISTRY_OVERRIDE,
+    ENTANDO_DOCKER_IMAGE_ORG_FALLBACK,
+    ENTANDO_DOCKER_IMAGE_ORG_OVERRIDE,
+    ENTANDO_DOCKER_IMAGE_INFO_CONFIGMAP,
+    ENTANDO_DOCKER_IMAGE_INFO_NAMESPACE,
 
     /*
     K8S Operator operational config
      */
-    // the specified namespace is used to find the config-map from which create the entando app
-    ENTANDO_K8S_OPERATOR_SCOPE("entando.k8s.operator.scope"),
-    ENTANDO_K8S_OPERATOR_GC_CONTROLLER_PODS("entando.k8s.operator.gc.controller.pods"),
-    ENTANDO_K8S_OPERATOR_SECURITY_MODE("entando.k8s.operator.security.mode"),
-    ENTANDO_K8S_OPERATOR_COMPLIANCE_MODE("entando.k8s.operator.compliance.mode"),
-    ENTANDO_K8S_OPERATOR_IMAGE_PULL_SECRETS("entando.k8s.operator.image.pull.secrets"),
-    ENTANDO_K8S_OPERATOR_ID("entando.k8s.operator.id"),
-    ENTANDO_K8S_OPERATOR_API_VERSION_RANGE("entando.k8s.operator.api.version.range"),
-    ENTANDO_K8S_OPERATOR_DISABLE_PVC_GARBAGE_COLLECTION("entando.k8s.operator.disable.pvc.garbage.collection"),
-    ENTANDO_NAMESPACES_TO_OBSERVE("entando.namespaces.to.observe"),
-    ENTANDO_K8S_OPERATOR_SERVICEACCOUNT("entando.k8s.operator.serviceaccount"),
-    ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS("entando.k8s.operator.impose.default.limits"),
-    ENTANDO_K8S_OPERATOR_REQUEST_TO_LIMIT_RATIO("entando.k8s.operator.request.to.limit.ratio"),
-    ENTANDO_K8S_OPERATOR_FORCE_DB_PASSWORD_RESET("entando.k8s.operator.force.db.password.reset"),
-    ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE("entando.k8s.operator.deployment.type"),
-    ENTANDO_K8S_OPERATOR_PULL_POLICY_OVERRIDE("entando.k8s.operator.pull.policy.override"),
+    ENTANDO_K8S_OPERATOR_GC_CONTROLLER_PODS,
+    ENTANDO_K8S_OPERATOR_SECURITY_MODE,
+    ENTANDO_K8S_OPERATOR_IMAGE_PULL_SECRETS,
+    ENTANDO_K8S_OPERATOR_DISABLE_PVC_GARBAGE_COLLECTION,
+    ENTANDO_K8S_OPERATOR_SERVICEACCOUNT,
+    ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS,
+    ENTANDO_K8S_OPERATOR_REQUEST_TO_LIMIT_RATIO,
+    ENTANDO_K8S_OPERATOR_FORCE_DB_PASSWORD_RESET,
+    ENTANDO_K8S_OPERATOR_PULL_POLICY_OVERRIDE,
 
     /*
     TLS config
      */
-    ENTANDO_TLS_SECRET_NAME("entando.tls.secret.name"),
-    ENTANDO_CA_SECRET_NAME("entando.ca.secret.name"),
-    ENTANDO_ASSUME_EXTERNAL_HTTPS_PROVIDER("entando.assume.external.https.provider"),
-    ENTANDO_USE_AUTO_CERT_GENERATION("entando.use.auto.cert.generation"),
-    ENTANDO_DISABLE_KEYCLOAK_SSL_REQUIREMENT("entando.disable.keycloak.ssl.requirement"),
+    ENTANDO_TLS_SECRET_NAME,
+    ENTANDO_ASSUME_EXTERNAL_HTTPS_PROVIDER,
+    ENTANDO_USE_AUTO_CERT_GENERATION,
+    ENTANDO_DISABLE_KEYCLOAK_SSL_REQUIREMENT,
     /*
     Misc config
      */
     // creates a dns mapping from the specified hostname *.*.*.*.nip.io to the corresponding ip *.*.*.* . typically it should point to
     // hosting machine ip address (https://nip.io/)
-    ENTANDO_DEFAULT_ROUTING_SUFFIX("entando.default.routing.suffix"),
-    ENTANDO_POD_COMPLETION_TIMEOUT_SECONDS("entando.pod.completion.timeout.seconds"),
-    ENTANDO_POD_READINESS_TIMEOUT_SECONDS("entando.pod.readiness.timeout.seconds"),
-    ENTANDO_POD_SHUTDOWN_TIMEOUT_SECONDS("entando.pod.shutdown.timeout.seconds"),
-    ENTANDO_CLUSTER_INFRASTRUCTURE_SECRET_NAME("entando.cluster.infrastructure.secret.name"),
-    ENTANDO_REQUIRES_FILESYSTEM_GROUP_OVERRIDE("entando.requires.filesystem.group.override"),
-    ENTANDO_INGRESS_CLASS("entando.ingress.class"),
-    ENTANDO_FORCE_EXTERNAL_ACCESS_TO_KEYCLOAK("entando.force.external.access.to.keycloak");
+    ENTANDO_DEFAULT_ROUTING_SUFFIX,
+    ENTANDO_CLUSTER_INFRASTRUCTURE_SECRET_NAME,
+    ENTANDO_REQUIRES_FILESYSTEM_GROUP_OVERRIDE,
+    ENTANDO_INGRESS_CLASS,
+    ENTANDO_FORCE_EXTERNAL_ACCESS_TO_KEYCLOAK,
+    ENTANDO_NAMESPACES_TO_OBSERVE,
+    ENTANDO_NAMESPACES_OF_INTEREST, ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE, ENTANDO_NUMBER_OF_READINESS_FAILURES;
 
-    private final String jvmSystemProperty;
-
-    EntandoOperatorConfigProperty(String jvmSystemProperty) {
-        this.jvmSystemProperty = jvmSystemProperty;
-    }
-
-    public String getJvmSystemProperty() {
-        return jvmSystemProperty;
-    }
 }

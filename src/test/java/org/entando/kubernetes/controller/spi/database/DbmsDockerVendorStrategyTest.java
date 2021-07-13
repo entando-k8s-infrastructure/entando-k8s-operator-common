@@ -21,7 +21,7 @@ import static org.hamcrest.Matchers.is;
 
 import org.entando.kubernetes.controller.spi.common.DbmsDockerVendorStrategy;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorComplianceMode;
-import org.entando.kubernetes.model.DbmsVendor;
+import org.entando.kubernetes.model.common.DbmsVendor;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Tags;
 import org.junit.jupiter.api.Test;

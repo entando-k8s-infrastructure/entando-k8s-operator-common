@@ -27,7 +27,7 @@ import io.fabric8.kubernetes.api.model.ResourceRequirements;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import org.entando.kubernetes.controller.spi.examples.barebones.BareBonesDeployable;
 import org.entando.kubernetes.controller.spi.examples.springboot.SpringBootDeployable;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
 import org.entando.kubernetes.controller.support.client.DeploymentClient;
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 import org.entando.kubernetes.controller.support.client.doubles.EntandoResourceClientDouble;
@@ -49,7 +49,7 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
     @AfterEach
     @BeforeEach
     void cleanUp() {
-        System.getProperties().remove(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS.getJvmSystemProperty());
+        System.getProperties().remove(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS.getJvmSystemProperty());
     }
 
     @Test
@@ -58,12 +58,12 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
         SimpleK8SClient<EntandoResourceClientDouble> client = new SimpleK8SClientDouble(16);
         EntandoApp testEntandoApp = newTestEntandoApp();
         DeploymentCreator deploymentCreator = new DeploymentCreator(testEntandoApp);
-        DatabaseServiceResult databaseServiceResult = emulateDatabasDeployment(client);
+        DatabaseConnectionInfo databaseConnectionInfo = emulateDatabasDeployment(client);
         //When I create a deployment
         Deployment actual = deploymentCreator.createDeployment(
                 new EntandoImageResolver(null),
                 client.deployments(),
-                new SpringBootDeployable<>(testEntandoApp, emulateKeycloakDeployment(client), databaseServiceResult));
+                new SpringBootDeployable<>(testEntandoApp, emulateKeycloakDeployment(client), databaseConnectionInfo));
         final Container thePrimaryContainer = thePrimaryContainerOn(actual);
         //Then I expect a startupProbe
         final Probe startupProbe = thePrimaryContainer.getStartupProbe();
@@ -103,12 +103,12 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
         SimpleK8SClient<EntandoResourceClientDouble> client = new SimpleK8SClientDouble(15);
         EntandoApp testEntandoApp = newTestEntandoApp();
         DeploymentCreator deploymentCreator = new DeploymentCreator(testEntandoApp);
-        DatabaseServiceResult databaseServiceResult = emulateDatabasDeployment(client);
+        DatabaseConnectionInfo databaseConnectionInfo = emulateDatabasDeployment(client);
         //When I create a deployment
         Deployment actual = deploymentCreator.createDeployment(
                 new EntandoImageResolver(null),
                 client.deployments(),
-                new SpringBootDeployable<>(testEntandoApp, emulateKeycloakDeployment(client), databaseServiceResult));
+                new SpringBootDeployable<>(testEntandoApp, emulateKeycloakDeployment(client), databaseConnectionInfo));
         final Container thePrimaryContainer = thePrimaryContainerOn(actual);
         //Then I expect no startupProbe
         assertThat(thePrimaryContainer.getStartupProbe(), is(nullValue()));
@@ -116,14 +116,14 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
         final Probe readinessProbe = thePrimaryContainer.getReadinessProbe();
         assertThat(readinessProbe.getHttpGet().getPort().getIntVal(), is(8084));
         assertThat(readinessProbe.getHttpGet().getPath(), is("/k8s/actuator/health"));
-        //That is delayed by half the maxStartupTime
-        assertThat(readinessProbe.getInitialDelaySeconds(), is(120 / 3));
+        //That is delayed by a sixth the maxStartupTime
+        assertThat(readinessProbe.getInitialDelaySeconds(), is(120 / 6));
         assertThat(readinessProbe.getSuccessThreshold(), is(nullValue()));
-        //is allowed to fail 3 times during startup
-        assertThat(readinessProbe.getFailureThreshold(), is(3));
+        //is allowed to fail 6 - 1 times during startup
+        assertThat(readinessProbe.getFailureThreshold(), is(5));
         assertThat(readinessProbe.getPeriodSeconds(), is(120 / 6));
         assertThat(readinessProbe.getTimeoutSeconds(), is(5));
-        //And a livenessprbe
+        //And a livenessprobe
         final Probe livenessProbe = thePrimaryContainer.getLivenessProbe();
         assertThat(livenessProbe.getHttpGet().getPort().getIntVal(), is(8084));
         assertThat(livenessProbe.getHttpGet().getPath(), is("/k8s/actuator/health"));
@@ -138,7 +138,7 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
 
     @Test
     void shouldCreateDeploymentWithTrueImposeResourceLimitsWillSetResourceLimitsOnCreatedDeployment() {
-        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS.getJvmSystemProperty(), "true");
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS.getJvmSystemProperty(), "true");
 
         ResourceRequirements resources = executeCreateDeploymentTest();
         assertThat(resources.getLimits().get("cpu").getAmount(), is("800"));
@@ -151,7 +151,7 @@ class DeploymentCreatorTest implements InProcessTestData, FluentTraversals {
     @Test
     void shouldCreateDeploymentWithFalseImposeResourceLimitsWillNotSetResourceLimitsOnCreatedDeployment() {
 
-        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS.getJvmSystemProperty(), "false");
+        System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS.getJvmSystemProperty(), "false");
 
         ResourceRequirements resources = executeCreateDeploymentTest();
 

@@ -20,6 +20,8 @@ public interface SimpleK8SClient<T extends EntandoResourceClient> {
 
     ServiceClient services();
 
+    CapabilityClient capabilities();
+
     IngressClient ingresses();
 
     DeploymentClient deployments();

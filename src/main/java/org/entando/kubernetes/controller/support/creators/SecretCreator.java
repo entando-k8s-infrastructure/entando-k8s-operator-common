@@ -17,17 +17,19 @@
 package org.entando.kubernetes.controller.support.creators;
 
 import static java.util.Optional.ofNullable;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
 
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
-import org.entando.kubernetes.controller.spi.container.TrustStoreAware;
+import org.entando.kubernetes.controller.spi.common.TrustStoreHelper;
 import org.entando.kubernetes.controller.spi.deployable.Deployable;
 import org.entando.kubernetes.controller.spi.deployable.Secretive;
 import org.entando.kubernetes.controller.support.client.SecretClient;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class SecretCreator extends AbstractK8SResourceCreator {
 
@@ -36,9 +38,9 @@ public class SecretCreator extends AbstractK8SResourceCreator {
     }
 
     public void createSecrets(SecretClient client, Deployable<?> deployable) {
-        EntandoOperatorConfig.getCertificateAuthoritySecretName().ifPresent(s -> {
+        EntandoOperatorSpiConfig.getCertificateAuthoritySecretName().ifPresent(s -> {
             cloneControllerSecret(client, s);
-            cloneControllerSecret(client, TrustStoreAware.DEFAULT_TRUSTSTORE_SECRET);
+            cloneControllerSecret(client, TrustStoreHelper.DEFAULT_TRUSTSTORE_SECRET);
         });
         EntandoOperatorConfig.getTlsSecretName().ifPresent(s -> cloneControllerSecret(client, s));
         if (EntandoOperatorConfig.useAutoCertGeneration()) {
@@ -67,21 +69,24 @@ public class SecretCreator extends AbstractK8SResourceCreator {
     private void cloneControllerSecret(SecretClient client, String name) {
         final Secret secret = client.loadControllerSecret(name);
         if (secret != null) {
-            client.createSecretIfAbsent(entandoCustomResource, new SecretBuilder()
-                    .withNewMetadata()
-                    .withLabels(secret.getMetadata().getLabels())
-                    .withAnnotations(secret.getMetadata().getAnnotations())
-                    .withName(name)
-                    .endMetadata()
-                    .withType(secret.getType())
-                    .withData(secret.getData())
-                    .withStringData(secret.getStringData())
-                    .build());
+            withDiagnostics(() -> {
+                client.createSecretIfAbsent(entandoCustomResource, new SecretBuilder()
+                        .withNewMetadata()
+                        .withLabels(secret.getMetadata().getLabels())
+                        .withAnnotations(secret.getMetadata().getAnnotations())
+                        .withName(name)
+                        .endMetadata()
+                        .withType(secret.getType())
+                        .withData(secret.getData())
+                        .withStringData(secret.getStringData())
+                        .build());
+                return null;
+            }, () -> secret);
         }
     }
 
     private void createSecret(SecretClient client, Secret secret) {
-        ObjectMeta metadata = fromCustomResource(true, secret.getMetadata().getName());
+        ObjectMeta metadata = fromCustomResource(secret.getMetadata().getName());
         ofNullable(secret.getMetadata().getLabels()).ifPresent(map -> metadata.getLabels().putAll(map));
         secret.setMetadata(metadata);
         client.createSecretIfAbsent(entandoCustomResource, secret);

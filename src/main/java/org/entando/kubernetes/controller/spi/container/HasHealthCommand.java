@@ -16,7 +16,7 @@
 
 package org.entando.kubernetes.controller.spi.container;
 
-public interface HasHealthCommand {
+public interface HasHealthCommand extends DeployableContainer {
 
     String getHealthCheckCommand();
 }

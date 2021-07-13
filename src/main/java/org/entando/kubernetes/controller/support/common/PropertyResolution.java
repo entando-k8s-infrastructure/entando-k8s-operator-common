@@ -17,8 +17,8 @@
 package org.entando.kubernetes.controller.support.common;
 
 import static java.util.Optional.ofNullable;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.ioSafe;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import java.util.Map;
@@ -96,13 +96,11 @@ public class PropertyResolution {
 
     @SuppressWarnings("unchecked")
     private Optional<String> extractValueFromContent(String content) {
-        try {
+        return ioSafe(() -> {
             ObjectMapper mapper = new ObjectMapper();
             Map<String, String> imageConfig = mapper.readValue(content, Map.class);
             return ofNullable(imageConfig.get(configMapKey));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException(e);
-        }
+        });
     }
 
 }

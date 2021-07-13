@@ -17,14 +17,14 @@
 package org.entando.kubernetes.test.componenttest.argumentcaptors;
 
 import java.util.List;
-import org.entando.kubernetes.controller.spi.container.KeycloakClientConfig;
+import org.entando.kubernetes.controller.spi.deployable.SsoClientConfig;
 import org.mockito.Mockito;
 import org.mockito.internal.matchers.CapturingMatcher;
 import org.mockito.internal.util.Primitives;
 
 public final class KeycloakClientConfigArgumentCaptor {
 
-    private final CapturingMatcher<KeycloakClientConfig> capturingMatcher;
+    private final CapturingMatcher<SsoClientConfig> capturingMatcher;
 
     @SuppressWarnings("unchecked")
     private KeycloakClientConfigArgumentCaptor(String clientid) {
@@ -35,16 +35,16 @@ public final class KeycloakClientConfigArgumentCaptor {
         return new KeycloakClientConfigArgumentCaptor(clientid);
     }
 
-    public KeycloakClientConfig capture() {
+    public SsoClientConfig capture() {
         Mockito.argThat(this.capturingMatcher);
-        return Primitives.defaultValue(KeycloakClientConfig.class);
+        return Primitives.defaultValue(SsoClientConfig.class);
     }
 
-    public KeycloakClientConfig getValue() {
+    public SsoClientConfig getValue() {
         return this.capturingMatcher.getLastValue();
     }
 
-    public List<KeycloakClientConfig> getAllValues() {
+    public List<SsoClientConfig> getAllValues() {
         return this.capturingMatcher.getAllValues();
     }
 
@@ -59,7 +59,7 @@ public final class KeycloakClientConfigArgumentCaptor {
 
         @Override
         public boolean matches(Object argument) {
-            return ((KeycloakClientConfig) argument).getClientId().equals(clientid);
+            return ((SsoClientConfig) argument).getClientId().equals(clientid);
         }
     }
 }

@@ -24,7 +24,13 @@ import java.util.stream.Collectors;
 
 public interface DeployableContainer {
 
-    String ENTANDO_SECRET_MOUNTS_ROOT = "/etc/entando/connectionconfigs";
+    String ENTANDO_SECRET_MOUNTS_ROOT = "/etc/entando/secrets";
+
+    String getNameQualifier();
+
+    int getPrimaryPort();
+
+    List<EnvVar> getEnvironmentVariables();
 
     default DockerImageInfo getDockerImageInfo() {
         return new DockerImageInfo(determineImageToUse());
@@ -38,15 +44,9 @@ public interface DeployableContainer {
         return Optional.empty();
     }
 
-    String getNameQualifier();
-
-    int getPrimaryPort();
-
     default List<PortSpec> getAdditionalPorts() {
         return Collections.emptyList();
     }
-
-    List<EnvVar> getEnvironmentVariables();
 
     default int getMemoryLimitMebibytes() {
         return 256;

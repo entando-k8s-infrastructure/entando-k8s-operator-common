@@ -16,54 +16,77 @@
 
 package org.entando.kubernetes.controller.support.client.doubles;
 
-import static java.lang.String.format;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.interruptionSafe;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.ioSafe;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.fabric8.kubernetes.api.model.ConfigMap;
-import io.fabric8.kubernetes.api.model.Secret;
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
+import io.fabric8.kubernetes.api.model.Event;
+import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Service;
-import io.fabric8.kubernetes.api.model.extensions.Ingress;
-import java.util.Collection;
-import java.util.HashMap;
+import io.fabric8.kubernetes.api.model.apiextensions.v1beta1.CustomResourceDefinition;
+import io.fabric8.kubernetes.client.CustomResource;
+import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
+import io.fabric8.kubernetes.client.dsl.PodResource;
+import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import org.entando.kubernetes.controller.spi.common.KeycloakPreference;
-import org.entando.kubernetes.controller.spi.common.NameUtils;
-import org.entando.kubernetes.controller.spi.container.KeycloakConnectionConfig;
-import org.entando.kubernetes.controller.spi.container.KeycloakName;
-import org.entando.kubernetes.controller.spi.database.ExternalDatabaseDeployment;
-import org.entando.kubernetes.controller.spi.result.ExposedService;
-import org.entando.kubernetes.controller.support.client.DoneableConfigMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import org.entando.kubernetes.controller.spi.client.ExecutionResult;
+import org.entando.kubernetes.controller.spi.client.KubernetesClientForControllers;
+import org.entando.kubernetes.controller.spi.client.SerializedEntandoResource;
+import org.entando.kubernetes.controller.spi.client.impl.SupportedStandardResourceKind;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorConfigBase;
 import org.entando.kubernetes.controller.support.client.EntandoResourceClient;
-import org.entando.kubernetes.controller.support.client.InfrastructureConfig;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
-import org.entando.kubernetes.controller.support.common.KubeUtils;
-import org.entando.kubernetes.model.AbstractServerStatus;
-import org.entando.kubernetes.model.ClusterInfrastructureAwareSpec;
-import org.entando.kubernetes.model.DbmsVendor;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
-import org.entando.kubernetes.model.EntandoControllerFailureBuilder;
-import org.entando.kubernetes.model.EntandoCustomResource;
-import org.entando.kubernetes.model.EntandoDeploymentPhase;
-import org.entando.kubernetes.model.ResourceReference;
-import org.entando.kubernetes.model.externaldatabase.EntandoDatabaseService;
-import org.entando.kubernetes.model.infrastructure.EntandoClusterInfrastructure;
-import org.entando.kubernetes.model.keycloakserver.EntandoKeycloakServer;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoDeploymentPhase;
 
-public class EntandoResourceClientDouble extends AbstractK8SClientDouble implements EntandoResourceClient {
+public class EntandoResourceClientDouble extends EntandoResourceClientDoubleBase implements EntandoResourceClient {
 
-    public EntandoResourceClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
-        super(namespaces);
+    private ConfigMap crdNameMap;
+
+    public EntandoResourceClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
+        super(namespaces, cluster);
+        final ConfigMapBuilder builder = new ConfigMapBuilder(
+                Objects.requireNonNullElseGet(getNamespace(CONTROLLER_NAMESPACE).getConfigMap(ENTANDO_CRD_NAMES_CONFIG_MAP), ConfigMap::new)
+        );
+        crdNameMap = getCluster().getResourceProcessor()
+                .processResource(getNamespace(CONTROLLER_NAMESPACE).getConfigMaps(), builder.withNewMetadata()
+                        .withName(ENTANDO_CRD_NAMES_CONFIG_MAP)
+                        .withNamespace(CONTROLLER_NAMESPACE).endMetadata().build());
+
     }
 
-    @SuppressWarnings("unchecked")
     public <T extends EntandoCustomResource> T createOrPatchEntandoResource(T r) {
-        this.getNamespace(r).getCustomResources((Class<T>) r.getClass()).put(r.getMetadata().getName(), r);
-        return r;
+        if (r != null) {
+            return this.getCluster().getResourceProcessor().processResource(getNamespace(r).getCustomResources(r.getKind()), r);
+        }
+        return null;
     }
 
-    public void putEntandoDatabaseService(EntandoDatabaseService externalDatabase) {
-        createOrPatchEntandoResource(externalDatabase);
+    @Override
+    public ExecutionResult executeOnPod(Pod pod, String containerName, int timeoutSeconds, String... commands) throws TimeoutException {
+        if (pod != null) {
+            PodResource<Pod> podResource = new PodResourceDouble();
+            return executeAndWait(podResource, containerName, timeoutSeconds, commands);
+        }
+        return null;
     }
 
     @Override
@@ -72,133 +95,106 @@ public class EntandoResourceClientDouble extends AbstractK8SClientDouble impleme
     }
 
     @Override
-    public void updateStatus(EntandoCustomResource customResource,
-            AbstractServerStatus status) {
-        customResource.getStatus().putServerStatus(status);
+    public Service loadControllerService(String name) {
+        return getNamespace(CONTROLLER_NAMESPACE).getService(name);
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T extends EntandoCustomResource> T reload(T customResource) {
-        return (T) getNamespace(customResource.getMetadata().getNamespace()).getCustomResources(customResource.getClass())
-                .get(customResource.getMetadata().getName());
+    public void prepareConfig() {
+        EntandoOperatorConfigBase.setConfigMap(loadOperatorConfig());
     }
 
     @Override
     public <T extends EntandoCustomResource> T load(Class<T> clzz, String namespace, String name) {
         Map<String, T> customResources = getNamespace(namespace).getCustomResources(clzz);
-        return customResources.get(name);
-    }
-
-    @Override
-    public void updatePhase(EntandoCustomResource entandoCustomResource, EntandoDeploymentPhase phase) {
-        entandoCustomResource.getStatus().updateDeploymentPhase(phase, entandoCustomResource.getMetadata().getGeneration());
-    }
-
-    @Override
-    public void deploymentFailed(EntandoCustomResource entandoCustomResource, Exception reason) {
-        entandoCustomResource.getStatus().findCurrentServerStatus()
-                .orElseThrow(() -> new IllegalStateException("No server status recorded yet!"))
-                .finishWith(new EntandoControllerFailureBuilder().withException(reason).build());
-    }
-
-    @Override
-    public Optional<ExternalDatabaseDeployment> findExternalDatabase(EntandoCustomResource resource, DbmsVendor vendor) {
-        NamespaceDouble namespace = getNamespace(resource);
-        Optional<EntandoDatabaseService> first = namespace.getCustomResources(EntandoDatabaseService.class).values().stream()
-                .filter(entandoDatabaseService -> entandoDatabaseService.getSpec().getDbms() == vendor).findFirst();
-        return first.map(edb -> new ExternalDatabaseDeployment(namespace.getService(ExternalDatabaseDeployment.serviceName(edb)), edb));
-    }
-
-    @Override
-    public KeycloakConnectionConfig findKeycloak(EntandoCustomResource resource, KeycloakPreference keycloakPreference) {
-        Optional<ResourceReference> keycloakToUse = determineKeycloakToUse(resource, keycloakPreference);
-        String secretName = keycloakToUse.map(KeycloakName::forTheAdminSecret)
-                .orElse(KeycloakName.DEFAULT_KEYCLOAK_ADMIN_SECRET);
-        String configMapName = keycloakToUse.map(KeycloakName::forTheConnectionConfigMap)
-                .orElse(KeycloakName.DEFAULT_KEYCLOAK_CONNECTION_CONFIG);
-        String configMapNamespace = keycloakToUse
-                .map(resourceReference -> resourceReference.getNamespace().orElseThrow(IllegalStateException::new))
-                .orElse(CONTROLLER_NAMESPACE);
-
-        Secret secret = getNamespace(CONTROLLER_NAMESPACE).getSecret(secretName);
-        ConfigMap configMap = getNamespace(configMapNamespace).getConfigMap(configMapName);
-        if (secret == null) {
-            throw new IllegalStateException(
-                    format("Could not find the Keycloak secret %s in namespace %s", secretName, CONTROLLER_NAMESPACE));
+        T t = customResources.get(name);
+        if (clzz.isInstance(t)) {
+            return t;
+        } else {
+            ObjectMapper objectMapper = new ObjectMapper();
+            return ioSafe(() -> objectMapper.readValue(objectMapper.writeValueAsString(t), clzz));
         }
-        if (configMap == null) {
-            throw new IllegalStateException(
-                    format("Could not find the Keycloak configMap %s in namespace %s", configMapName, configMapNamespace));
-        }
-        return new KeycloakConnectionConfig(secret, configMap);
-    }
-
-    @Override
-    public Optional<EntandoKeycloakServer> findKeycloakInNamespace(EntandoCustomResource peerInNamespace) {
-        Collection<EntandoKeycloakServer> keycloakServers = getNamespace(peerInNamespace).getCustomResources(EntandoKeycloakServer.class)
-                .values();
-        if (keycloakServers.size() == 1) {
-            return keycloakServers.stream().findAny();
-        }
-        return Optional.empty();
-    }
-
-    @Override
-    public <T extends ClusterInfrastructureAwareSpec> Optional<InfrastructureConfig> findInfrastructureConfig(
-            EntandoBaseCustomResource<T> resource) {
-        Optional<ResourceReference> reference = determineClusterInfrastructureToUse(resource);
-        return reference.map(rr -> new InfrastructureConfig(
-                getNamespace(rr.getNamespace().orElseThrow(IllegalStateException::new))
-                        .getConfigMap(InfrastructureConfig.connectionConfigMapNameFor(rr))));
-    }
-
-    @Override
-    public ExposedService loadExposedService(EntandoCustomResource resource) {
-        NamespaceDouble namespace = getNamespace(resource);
-        Service service = namespace.getService(
-                resource.getMetadata().getName() + "-" + NameUtils.DEFAULT_SERVER_QUALIFIER + "-" + NameUtils.DEFAULT_SERVICE_SUFFIX);
-        Ingress ingress = namespace.getIngress(
-                resource.getMetadata().getName() + "-" + NameUtils.DEFAULT_INGRESS_SUFFIX);
-        return new ExposedService(service, ingress);
-    }
-
-    @Override
-    public DoneableConfigMap loadDefaultCapabilitiesConfigMap() {
-        ConfigMap configMap = getNamespace(CONTROLLER_NAMESPACE)
-                .getConfigMap(KubeUtils.ENTANDO_OPERATOR_DEFAULT_CAPABILITIES_CONFIGMAP_NAME);
-        if (configMap == null) {
-            return new DoneableConfigMap(item -> {
-                getNamespace(CONTROLLER_NAMESPACE).putConfigMap(item);
-                return item;
-            })
-                    .withNewMetadata()
-                    .withName(KubeUtils.ENTANDO_OPERATOR_DEFAULT_CAPABILITIES_CONFIGMAP_NAME)
-                    .withNamespace(CONTROLLER_NAMESPACE)
-                    .endMetadata()
-                    .addToData(new HashMap<>());
-        }
-        return new DoneableConfigMap(configMap, item -> {
-            getNamespace(CONTROLLER_NAMESPACE).putConfigMap(item);
-            return item;
-        });
     }
 
     @Override
     public ConfigMap loadDockerImageInfoConfigMap() {
         return getNamespace(EntandoOperatorConfig.getEntandoDockerImageInfoNamespace().orElse(CONTROLLER_NAMESPACE))
                 .getConfigMap(EntandoOperatorConfig.getEntandoDockerImageInfoConfigMap());
-
     }
 
     @Override
     public ConfigMap loadOperatorConfig() {
-        return getNamespace(CONTROLLER_NAMESPACE).getConfigMap(KubeUtils.ENTANDO_OPERATOR_CONFIG_CONFIGMAP_NAME);
+        return getNamespace(CONTROLLER_NAMESPACE).getConfigMap(KubernetesClientForControllers.ENTANDO_OPERATOR_CONFIG_CONFIGMAP_NAME);
     }
 
     @Override
-    public Optional<EntandoClusterInfrastructure> findClusterInfrastructureInNamespace(EntandoCustomResource resource) {
-        return getNamespace(resource).getCustomResources(EntandoClusterInfrastructure.class).values().stream().findAny();
+    public SerializedEntandoResource loadCustomResource(String apiVersion, String kind, String namespace, String name) {
+        try {
+            final ObjectMapper objectMapper = new ObjectMapper();
+            final SerializedEntandoResource resource = objectMapper
+                    .readValue(objectMapper.writeValueAsString(getNamespace(namespace).getCustomResources(kind).get(name)),
+                            SerializedEntandoResource.class);
+            final String group = kind + "." + apiVersion.substring(0, apiVersion.indexOf("/"));
+            resource.setDefinition(CustomResourceDefinitionContext.fromCrd(getCluster()
+                    .getCustomResourceDefinition(crdNameMap.getData().get(group))));
+            return resource;
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Override
+    public HasMetadata loadStandardResource(String kind, String namespace, String name) {
+        switch (SupportedStandardResourceKind.resolveFromKind(kind).get()) {
+            case DEPLOYMENT:
+                return getNamespace(namespace).getDeployment(name);
+            case INGRESS:
+                return getNamespace(namespace).getIngress(name);
+            case SERVICE:
+                return getNamespace(namespace).getService(name);
+            case SECRET:
+                return getNamespace(namespace).getSecret(name);
+            case POD:
+                return getNamespace(namespace).getPod(name);
+            case PERSISTENT_VOLUME_CLAIM:
+                return getNamespace(namespace).getPersistentVolumeClaim(name);
+            default:
+                return null;
+        }
+
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public synchronized <T extends EntandoCustomResource> T performStatusUpdate(T customResource, Consumer<T> consumer) {
+        final T reloaded = (T) getNamespace(customResource.getMetadata().getNamespace()).getCustomResources(customResource.getKind())
+                .get(customResource.getMetadata().getName());
+        consumer.accept(reloaded);
+        return getCluster().getResourceProcessor()
+                .processResource(getNamespace(customResource).getCustomResources(customResource.getKind()), reloaded);
+    }
+
+    @Override
+    public <T extends EntandoCustomResource> void issueEvent(T customResource, Event event) {
+        getNamespace(customResource).putEvent(event);
+    }
+
+    @Override
+    public List<Event> listEventsFor(EntandoCustomResource resource) {
+        return Collections.emptyList();
+    }
+
+    public void registerCustomResourceDefinition(String resourceName) throws IOException {
+        final ObjectMapper objectMapper = new ObjectMapper(new YAMLFactory());
+        final CustomResourceDefinition crd = objectMapper
+                .readValue(Thread.currentThread().getContextClassLoader().getResource(resourceName),
+                        CustomResourceDefinition.class);
+        getCluster().putCustomResourceDefinition(crd);
+        crdNameMap = getCluster().getResourceProcessor().processResource(getNamespace(CONTROLLER_NAMESPACE).getConfigMaps(),
+                new ConfigMapBuilder(getNamespace(CONTROLLER_NAMESPACE).getConfigMap(ENTANDO_CRD_NAMES_CONFIG_MAP))
+                        .addToData(crd.getSpec().getNames().getKind() + "." + crd.getSpec().getGroup(), crd.getMetadata().getName())
+                        .build());
+
     }
 
 }

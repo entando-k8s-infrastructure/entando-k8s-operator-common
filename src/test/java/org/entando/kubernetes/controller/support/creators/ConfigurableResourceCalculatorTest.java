@@ -42,7 +42,7 @@ class ConfigurableResourceCalculatorTest {
     @Test
     void calculateRequestsWithDefaultRatioAndNoOverride() {
         ConfigurableResourceCalculator resourceCalculator = new ConfigurableResourceCalculator(
-                new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpec()), null, null));
+                new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpec()), null, null, null));
         assertThat(resourceCalculator.getCpuLimit(), is("1000m"));
         assertThat(resourceCalculator.getMemoryLimit(), is("1024Mi"));
         assertThat(resourceCalculator.getCpuRequest(), is("250m"));
@@ -53,7 +53,7 @@ class ConfigurableResourceCalculatorTest {
     void calculateRequestsWithProvidedRatioNoOverride() {
         System.setProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_REQUEST_TO_LIMIT_RATIO.getJvmSystemProperty(), "0.2");
         ConfigurableResourceCalculator resourceCalculator = new ConfigurableResourceCalculator(
-                new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpec()), null, null));
+                new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpec()), null, null, null));
         assertThat(resourceCalculator.getCpuLimit(), is("1000m"));
         assertThat(resourceCalculator.getMemoryLimit(), is("1024Mi"));
         assertThat(resourceCalculator.getCpuRequest(), is("200m"));
@@ -67,7 +67,7 @@ class ConfigurableResourceCalculatorTest {
                 new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpecBuilder().withNewResourceRequirements()
                         .withMemoryLimit("2Gi")
                         .withCpuLimit("10.4")
-                        .endResourceRequirements().build()), null, null));
+                        .endResourceRequirements().build()), null, null, null));
         assertThat(resourceCalculator.getCpuLimit(), is("10.4"));
         assertThat(resourceCalculator.getMemoryLimit(), is("2Gi"));
         //Note: decrease the UOM here by one level
@@ -82,7 +82,7 @@ class ConfigurableResourceCalculatorTest {
                 new SampleSpringBootDeployableContainer<>(new EntandoApp(new EntandoAppSpecBuilder().withNewResourceRequirements()
                         .withMemoryLimit("2048Mi")
                         .withCpuLimit("2000m")
-                        .endResourceRequirements().build()), null, null));
+                        .endResourceRequirements().build()), null, null, null));
         assertThat(resourceCalculator.getCpuLimit(), is("2000m"));
         assertThat(resourceCalculator.getMemoryLimit(), is("2048Mi"));
         assertThat(resourceCalculator.getCpuRequest(), is("400m"));
@@ -97,7 +97,7 @@ class ConfigurableResourceCalculatorTest {
                         .withMemoryRequest("256Mi")
                         .withCpuLimit("2000m")
                         .withCpuRequest("50m")
-                        .endResourceRequirements().build()), null, null));
+                        .endResourceRequirements().build()), null, null, null));
         assertThat(resourceCalculator.getCpuLimit(), is("2000m"));
         assertThat(resourceCalculator.getMemoryLimit(), is("2048Mi"));
         assertThat(resourceCalculator.getCpuRequest(), is("50m"));

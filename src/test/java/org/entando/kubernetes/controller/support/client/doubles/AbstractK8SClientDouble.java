@@ -17,20 +17,42 @@
 package org.entando.kubernetes.controller.support.client.doubles;
 
 import io.fabric8.kubernetes.api.model.HasMetadata;
+import java.util.Collection;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class AbstractK8SClientDouble {
 
-    public static final String CONTROLLER_NAMESPACE = "controller-namespace";
-    private final ConcurrentHashMap<String, NamespaceDouble> namespaces;
-
-    public AbstractK8SClientDouble() {
-        this.namespaces = new ConcurrentHashMap<>();
+    protected static boolean matchesSelector(Map<String, String> selector, HasMetadata resource) {
+        return selector.entrySet().stream().allMatch(
+                entry -> resource.getMetadata().getLabels() != null
+                        && resource.getMetadata().getLabels().containsKey(entry.getKey())
+                        && (entry.getValue() == null || entry.getValue().equals(resource.getMetadata().getLabels().get(entry.getKey()))));
     }
 
-    public AbstractK8SClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
+    public static final String CONTROLLER_NAMESPACE = "controller-namespace";
+    private final ConcurrentHashMap<String, NamespaceDouble> namespaces;
+    private final ClusterDouble cluster;
+
+    public AbstractK8SClientDouble() {
+        this(new ConcurrentHashMap<>(), new ClusterDouble());
+    }
+
+    public AbstractK8SClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
         this.namespaces = namespaces;
+        this.cluster = cluster;
         getNamespace(CONTROLLER_NAMESPACE);
+    }
+
+    public ClusterDouble getCluster() {
+        return cluster;
+    }
+
+    public Map<String, Map<String, Collection<? extends HasMetadata>>> getKubernetesState() {
+        Map<String, Map<String, Collection<? extends HasMetadata>>> result = new ConcurrentHashMap<>();
+        namespaces.forEach((namespaceName, namespaceDouble) -> result.put(namespaceName, namespaceDouble.getKubernetesState()));
+        result.put("ClusterScopedResource", this.cluster.getKubernetesState());
+        return result;
     }
 
     protected NamespaceDouble getNamespace(HasMetadata customResource) {

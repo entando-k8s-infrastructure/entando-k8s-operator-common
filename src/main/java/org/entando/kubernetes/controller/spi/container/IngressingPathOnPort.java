@@ -18,5 +18,7 @@ package org.entando.kubernetes.controller.spi.container;
 
 public interface IngressingPathOnPort extends HasWebContext {
 
+    String getNameQualifier();
+
     int getPortForIngressPath();
 }

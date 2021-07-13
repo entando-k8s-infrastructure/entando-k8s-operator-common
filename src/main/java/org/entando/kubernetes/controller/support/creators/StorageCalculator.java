@@ -16,13 +16,13 @@
 
 package org.entando.kubernetes.controller.support.creators;
 
-import org.entando.kubernetes.controller.spi.container.PersistentVolumeAware;
+import org.entando.kubernetes.controller.spi.container.PersistentVolumeAwareContainer;
 
 public class StorageCalculator extends LimitAndRequestCalculator {
 
-    private final PersistentVolumeAware container;
+    private final PersistentVolumeAwareContainer container;
 
-    public StorageCalculator(PersistentVolumeAware container) {
+    public StorageCalculator(PersistentVolumeAwareContainer container) {
         this.container = container;
     }
 

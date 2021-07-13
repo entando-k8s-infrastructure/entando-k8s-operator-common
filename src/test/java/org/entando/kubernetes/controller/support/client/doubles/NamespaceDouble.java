@@ -18,6 +18,8 @@ package org.entando.kubernetes.controller.support.client.doubles;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.Endpoints;
+import io.fabric8.kubernetes.api.model.Event;
+import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Secret;
@@ -27,15 +29,17 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.api.model.rbac.Role;
 import io.fabric8.kubernetes.api.model.rbac.RoleBinding;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class NamespaceDouble {
 
     private final Map<String, Service> services = new ConcurrentHashMap<>();
     private final Map<String, Ingress> ingresses = new ConcurrentHashMap<>();
     private final Map<String, Deployment> deployments = new ConcurrentHashMap<>();
+    private final Map<String, Event> events = new ConcurrentHashMap<>();
     private final Map<String, Pod> pods = new ConcurrentHashMap<>();
     private final Map<String, PersistentVolumeClaim> persistentVolumeClaims = new ConcurrentHashMap<>();
     private final Map<String, Endpoints> endpointsMap = new ConcurrentHashMap<>();
@@ -44,7 +48,7 @@ public class NamespaceDouble {
     private final Map<String, ServiceAccount> serviceAccounts = new ConcurrentHashMap<>();
     private final Map<String, Role> roles = new ConcurrentHashMap<>();
     private final Map<String, RoleBinding> roleBindings = new ConcurrentHashMap<>();
-    private final Map<Class<? extends EntandoCustomResource>, Map<String, EntandoCustomResource>> customResources = new
+    private final Map<String, Map<String, EntandoCustomResource>> customResources = new
             ConcurrentHashMap<>();
     private final String name;
 
@@ -56,12 +60,14 @@ public class NamespaceDouble {
         return name;
     }
 
-    public void putService(String name, Service service) {
-        services.put(name, service);
+    public Service putService(Service service) {
+        services.put(service.getMetadata().getName(), service);
+        return service;
     }
 
-    public void putIngress(String name, Ingress ingress) {
-        ingresses.put(name, ingress);
+    public Ingress putIngress(Ingress ingress) {
+        ingresses.put(ingress.getMetadata().getName(), ingress);
+        return ingress;
     }
 
     public Ingress getIngress(String name) {
@@ -72,12 +78,17 @@ public class NamespaceDouble {
         return services.get(name);
     }
 
-    public void putDeployment(String name, Deployment deployment) {
-        this.deployments.put(name, deployment);
+    public Deployment putDeployment(Deployment deployment) {
+        this.deployments.put(deployment.getMetadata().getName(), deployment);
+        return deployment;
     }
 
     public Deployment getDeployment(String name) {
         return deployments.get(name);
+    }
+
+    public Map<String, Deployment> getDeployments() {
+        return deployments;
     }
 
     public Pod getPod(String name) {
@@ -100,6 +111,10 @@ public class NamespaceDouble {
         return persistentVolumeClaims.get(name);
     }
 
+    public Map<String, PersistentVolumeClaim> getPersistentVolumeClaims() {
+        return persistentVolumeClaims;
+    }
+
     public void putEndpoints(Endpoints endpoints) {
         this.endpointsMap.put(endpoints.getMetadata().getName(), endpoints);
 
@@ -117,12 +132,20 @@ public class NamespaceDouble {
         return this.secrets.get(secretName);
     }
 
+    public Map<String, Secret> getSecrets() {
+        return secrets;
+    }
+
     public void putServiceAccount(ServiceAccount serviceAccount) {
         this.serviceAccounts.put(serviceAccount.getMetadata().getName(), serviceAccount);
     }
 
     public ServiceAccount getServiceAccount(String name) {
         return this.serviceAccounts.get(name);
+    }
+
+    public Map<String, ServiceAccount> getServiceAccounts() {
+        return serviceAccounts;
     }
 
     public void putRole(Role role) {
@@ -133,6 +156,10 @@ public class NamespaceDouble {
         return this.roles.get(name);
     }
 
+    public Map<String, Role> getRoles() {
+        return roles;
+    }
+
     public void putRoleBinding(RoleBinding roleBinding) {
         this.roleBindings.put(roleBinding.getMetadata().getName(), roleBinding);
     }
@@ -141,16 +168,63 @@ public class NamespaceDouble {
         return this.roleBindings.get(name);
     }
 
+    public Map<String, RoleBinding> getRoleBindings() {
+        return roleBindings;
+    }
+
     @SuppressWarnings("unchecked")
     public <T extends EntandoCustomResource> Map<String, T> getCustomResources(Class<T> customResource) {
-        return (Map<String, T>) customResources.computeIfAbsent(customResource, aClass -> new ConcurrentHashMap<>());
+        return (Map<String, T>) customResources.computeIfAbsent(customResource.getSimpleName(), kind -> new ConcurrentHashMap<>());
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T extends EntandoCustomResource> Map<String, T> getCustomResources(String kind) {
+        return (Map<String, T>) customResources.computeIfAbsent(kind, s -> new ConcurrentHashMap<>());
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T extends EntandoCustomResource> T getCustomResource(String kind, String name) {
+        return (T) getCustomResources(kind).get(name);
+    }
+
+    public void putCustomResource(EntandoCustomResource resource) {
+        getCustomResources(resource.getKind()).put(resource.getMetadata().getName(), resource);
     }
 
     public ConfigMap getConfigMap(String configMapName) {
         return configMaps.get(configMapName);
     }
 
+    public Map<String, Collection<? extends HasMetadata>> getKubernetesState() {
+        Map<String, Collection<? extends HasMetadata>> result = new ConcurrentHashMap<>();
+        result.put("services", services.values());
+        result.put("ingresses", ingresses.values());
+        result.put("deployments", deployments.values());
+        result.put("events", events.values());
+        result.put("pods", pods.values());
+        result.put("persistentVolumeClaims", persistentVolumeClaims.values());
+        result.put("endpointsMap", endpointsMap.values());
+        result.put("secrets", secrets.values());
+        result.put("configMaps", configMaps.values());
+        result.put("serviceAccounts", serviceAccounts.values());
+        result.put("roles", roles.values());
+        result.put("roleBinding", roleBindings.values());
+        this.customResources.forEach(
+                (kind, stringEntandoCustomResourceMap) -> result.put(kind, stringEntandoCustomResourceMap.values())
+        );
+        return result;
+    }
+
+    public Map<String, ConfigMap> getConfigMaps() {
+        return configMaps;
+    }
+
     public void putConfigMap(ConfigMap configMap) {
         this.configMaps.put(configMap.getMetadata().getName(), configMap);
+    }
+
+    public Event putEvent(Event event) {
+        this.events.put(event.getMetadata().getName(), event);
+        return event;
     }
 }

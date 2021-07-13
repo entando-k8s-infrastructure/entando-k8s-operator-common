@@ -17,13 +17,15 @@
 package org.entando.kubernetes.controller.support.client;
 
 import io.fabric8.kubernetes.api.model.apps.Deployment;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import java.util.concurrent.TimeoutException;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
-public interface DeploymentClient extends PodWaitingClient {
+public interface DeploymentClient {
 
     boolean supportsStartupProbes();
 
-    Deployment createOrPatchDeployment(EntandoCustomResource customResource, Deployment deployment);
+    Deployment createOrPatchDeployment(EntandoCustomResource customResource, Deployment deployment, int timeoutSeconds)
+            throws TimeoutException;
 
     Deployment loadDeployment(EntandoCustomResource peerInNamespace, String name);
 

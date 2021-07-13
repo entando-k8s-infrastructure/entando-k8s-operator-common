@@ -16,6 +16,8 @@
 
 package org.entando.kubernetes.controller.support.client;
 
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
+
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.api.model.extensions.IngressFluentImpl;
 import java.util.function.UnaryOperator;
@@ -32,7 +34,7 @@ public class DoneableIngress extends IngressFluentImpl<DoneableIngress> {
 
     public Ingress done() {
         Ingress built = new Ingress(getApiVersion(), getKind(), buildMetadata(), buildSpec(), buildStatus());
-        return action.apply(built);
+        return withDiagnostics(() -> action.apply(built), () -> built);
     }
 
     @Override

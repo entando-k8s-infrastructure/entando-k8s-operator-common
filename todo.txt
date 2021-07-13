@@ -1,0 +1,6 @@
+To test:
+
+ExternalService that uses IPv6 address
+Test an SSOClientConfig with permissions and roles
+Test SpringBoot container example
+DAtabase name too long

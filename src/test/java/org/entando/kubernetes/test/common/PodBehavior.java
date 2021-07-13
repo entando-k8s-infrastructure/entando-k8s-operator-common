@@ -30,13 +30,9 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.entando.kubernetes.client.EntandoExecListener;
-import org.entando.kubernetes.client.PodWatcher;
 import org.entando.kubernetes.controller.spi.common.PodResult;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
 import org.entando.kubernetes.controller.support.client.PodClient;
-import org.entando.kubernetes.controller.support.client.PodWaitingClient;
-import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 
 public interface PodBehavior {
 
@@ -52,24 +48,6 @@ public interface PodBehavior {
                 .addNewCondition().withType("Ready").withStatus("True").endCondition().build();
         pod.setStatus(status);
         return pod;
-    }
-
-    default PodWatcher takePodWatcherFrom(PodWaitingClient podWaitingClient) {
-        try {
-            return podWaitingClient.getPodWatcherQueue().take();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
-        }
-    }
-
-    default EntandoExecListener takeExecutionListenerFrom(PodClient podWaitingClient) {
-        try {
-            return podWaitingClient.getExecListenerHolder().take();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
-        }
     }
 
     default Pod podWithSucceededStatus(Pod pod) {
@@ -115,8 +93,8 @@ public interface PodBehavior {
                         .endState().build()).collect(Collectors.toList());
     }
 
-    default Pod podWithStatus(PodStatus status, String namespace) {
-        return getClient().pods().start(new PodBuilder().withNewMetadata()
+    default Pod podWithStatus(PodClient client, PodStatus status, String namespace) {
+        return client.start(new PodBuilder().withNewMetadata()
                 .withName("pod-" + RandomStringUtils.randomAlphanumeric(8))
                 .withNamespace(namespace)
                 .endMetadata()
@@ -124,7 +102,5 @@ public interface PodBehavior {
                 .editOrNewSpec().addNewInitContainer().endInitContainer().endSpec()
                 .withStatus(status).build());
     }
-
-    SimpleK8SClient<?> getClient();
 
 }

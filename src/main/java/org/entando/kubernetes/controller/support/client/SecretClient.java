@@ -18,7 +18,7 @@ package org.entando.kubernetes.controller.support.client;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.Secret;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public interface SecretClient {
 
@@ -46,9 +46,8 @@ public interface SecretClient {
 
     ConfigMap loadConfigMap(EntandoCustomResource peerInNamespace, String name);
 
-    @Deprecated
+    //Mostly for testing. TODO: consider moving to SecretClientDouble
     void overwriteControllerConfigMap(ConfigMap newKeycloakConnectionConfigMap);
 
-    @Deprecated
     ConfigMap loadControllerConfigMap(String configMapName);
 }

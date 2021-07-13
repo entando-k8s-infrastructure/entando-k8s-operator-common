@@ -17,7 +17,7 @@
 package org.entando.kubernetes.controller.support.creators;
 
 public enum EntandoRbacRole {
-    ENTANDO_EDITOR("entando-editor"), POD_VIEWER("pod-viewer");
+    ENTANDO_EDITOR("entando-editor"), POD_VIEWER("pod-viewer"), INGRESS_VIEWER("ingress-viewer");
 
     private final String k8sName;
 

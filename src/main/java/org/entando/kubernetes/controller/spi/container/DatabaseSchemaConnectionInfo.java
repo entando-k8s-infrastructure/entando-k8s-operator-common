@@ -18,65 +18,21 @@ package org.entando.kubernetes.controller.spi.container;
 
 import io.fabric8.kubernetes.api.model.EnvVarSource;
 import io.fabric8.kubernetes.api.model.Secret;
-import org.entando.kubernetes.controller.spi.common.DbmsDockerVendorStrategy;
-import org.entando.kubernetes.controller.spi.common.SecretUtils;
-import org.entando.kubernetes.controller.spi.result.AbstractServiceResult;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
 
-public class DatabaseSchemaConnectionInfo extends AbstractServiceResult {
+public interface DatabaseSchemaConnectionInfo {
 
-    private final DatabaseServiceResult databaseServiceResult;
-    private final String schemaName;
-    private final Secret schemaSecret;
+    String getSchemaSecretName();
 
-    public DatabaseSchemaConnectionInfo(DatabaseServiceResult databaseServiceResult, String schemaName, Secret schemaSecret) {
-        super(databaseServiceResult.getService());
-        this.databaseServiceResult = databaseServiceResult;
-        this.schemaName = schemaName;
-        this.schemaSecret = schemaSecret;
-    }
+    String getJdbcUrl();
 
-    public String getSchemaSecretName() {
-        return schemaSecret.getMetadata().getName();
-    }
+    String getSchemaName();
 
-    public String getJdbcUrl() {
-        return getVendor().getVendorConfig().getConnectionStringBuilder().toHost(getInternalServiceHostname()).onPort(getPort())
-                .usingDatabase(
-                        getDatabase()).usingSchema(schemaName).usingParameters(this.databaseServiceResult.getJdbcParameters())
-                .buildJdbcConnectionString();
-    }
+    EnvVarSource getPasswordRef();
 
-    public DbmsDockerVendorStrategy getVendor() {
-        return this.databaseServiceResult.getVendor();
-    }
+    EnvVarSource getUsernameRef();
 
-    public String getDatabase() {
-        if (getVendor().getVendorConfig().schemaIsDatabase()) {
-            return getSchemaName();
-        } else {
-            return this.databaseServiceResult.getDatabaseName();
-        }
-    }
+    DatabaseConnectionInfo getDatabaseServiceResult();
 
-    public DatabaseServiceResult getDatabaseServiceResult() {
-        return databaseServiceResult;
-    }
-
-    public String getSchemaName() {
-        return schemaName;
-    }
-
-    public EnvVarSource getPasswordRef() {
-        return SecretUtils.secretKeyRef(getSchemaSecretName(), SecretUtils.PASSSWORD_KEY);
-    }
-
-    public EnvVarSource getUsernameRef() {
-        return SecretUtils.secretKeyRef(getSchemaSecretName(), SecretUtils.USERNAME_KEY);
-    }
-
-    public Secret getSchemaSecret() {
-        return this.schemaSecret;
-    }
-
+    Secret getSchemaSecret();
 }

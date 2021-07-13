@@ -21,25 +21,29 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import java.util.List;
+import java.util.Optional;
 import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.container.DeployableContainer;
 import org.entando.kubernetes.controller.spi.deployable.DbAwareDeployable;
-import org.entando.kubernetes.controller.spi.result.DatabaseServiceResult;
+import org.entando.kubernetes.controller.spi.result.DatabaseConnectionInfo;
+import org.entando.kubernetes.controller.spi.result.DefaultExposedDeploymentResult;
 import org.entando.kubernetes.controller.support.spibase.IngressingDeployableBase;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
-import org.entando.kubernetes.model.EntandoCustomResource;
-import org.entando.kubernetes.model.EntandoIngressingDeploymentSpec;
+import org.entando.kubernetes.model.common.EntandoBaseCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResourceStatus;
+import org.entando.kubernetes.model.common.EntandoIngressingDeploymentSpec;
 
 public abstract class SampleIngressingDbAwareDeployable<S extends EntandoIngressingDeploymentSpec> implements
-        IngressingDeployableBase<SampleExposedDeploymentResult>, DbAwareDeployable<SampleExposedDeploymentResult> {
+        IngressingDeployableBase<DefaultExposedDeploymentResult>, DbAwareDeployable<DefaultExposedDeploymentResult> {
 
-    protected final EntandoBaseCustomResource<S> entandoResource;
+    protected final EntandoBaseCustomResource<S, EntandoCustomResourceStatus> entandoResource;
     protected final List<DeployableContainer> containers;
-    protected final DatabaseServiceResult databaseServiceResult;
+    protected final DatabaseConnectionInfo databaseConnectionInfo;
 
-    public SampleIngressingDbAwareDeployable(EntandoBaseCustomResource<S> entandoResource, DatabaseServiceResult databaseServiceResult) {
+    public SampleIngressingDbAwareDeployable(EntandoBaseCustomResource<S, EntandoCustomResourceStatus> entandoResource,
+            DatabaseConnectionInfo databaseConnectionInfo) {
         this.entandoResource = entandoResource;
-        this.databaseServiceResult = databaseServiceResult;
+        this.databaseConnectionInfo = databaseConnectionInfo;
         this.containers = createContainers(entandoResource);
     }
 
@@ -48,7 +52,8 @@ public abstract class SampleIngressingDbAwareDeployable<S extends EntandoIngress
         return entandoResource.getSpec().getServiceAccountToUse().orElse(getDefaultServiceAccountName());
     }
 
-    protected abstract List<DeployableContainer> createContainers(EntandoBaseCustomResource<S> entandoResource);
+    protected abstract List<DeployableContainer> createContainers(
+            EntandoBaseCustomResource<S, EntandoCustomResourceStatus> entandoResource);
 
     @Override
     public List<DeployableContainer> getContainers() {
@@ -56,18 +61,18 @@ public abstract class SampleIngressingDbAwareDeployable<S extends EntandoIngress
     }
 
     @Override
-    public String getNameQualifier() {
-        return NameUtils.DEFAULT_SERVER_QUALIFIER;
+    public Optional<String> getQualifier() {
+        return Optional.of(NameUtils.DEFAULT_SERVER_QUALIFIER);
     }
 
     @Override
-    public EntandoBaseCustomResource<S> getCustomResource() {
+    public EntandoBaseCustomResource<S, EntandoCustomResourceStatus> getCustomResource() {
         return entandoResource;
     }
 
     @Override
-    public SampleExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
-        return new SampleExposedDeploymentResult(pod, service, ingress);
+    public DefaultExposedDeploymentResult createResult(Deployment deployment, Service service, Ingress ingress, Pod pod) {
+        return new DefaultExposedDeploymentResult(pod, service, ingress);
     }
 
     @Override
@@ -85,4 +90,8 @@ public abstract class SampleIngressingDbAwareDeployable<S extends EntandoIngress
         return entandoResource.getMetadata().getNamespace();
     }
 
+    @Override
+    public boolean isIngressRequired() {
+        return true;
+    }
 }

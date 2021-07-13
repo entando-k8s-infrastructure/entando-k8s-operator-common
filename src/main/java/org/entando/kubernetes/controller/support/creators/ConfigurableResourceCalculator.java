@@ -17,7 +17,7 @@
 package org.entando.kubernetes.controller.support.creators;
 
 import org.entando.kubernetes.controller.spi.container.ConfigurableResourceContainer;
-import org.entando.kubernetes.model.EntandoResourceRequirements;
+import org.entando.kubernetes.model.common.EntandoResourceRequirements;
 
 public class ConfigurableResourceCalculator extends ResourceCalculator {
 

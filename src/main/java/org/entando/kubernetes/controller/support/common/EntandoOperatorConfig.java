@@ -18,17 +18,42 @@ package org.entando.kubernetes.controller.support.common;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.entando.kubernetes.controller.spi.common.EntandoOperatorConfigBase;
 
 public final class EntandoOperatorConfig extends EntandoOperatorConfigBase {
 
-    public static final String SEPERATOR_PATTERN = "[\\s,:]+";
-
     private EntandoOperatorConfig() {
     }
 
+    public static boolean isClusterScopedDeployment() {
+        if (getOperatorDeploymentType() == OperatorDeploymentType.OLM) {
+            return getNamespacesToObserve().isEmpty();
+        } else {
+            return getNamespacesToObserve().stream().anyMatch("*"::equals);
+        }
+    }
+
+    public static OperatorDeploymentType getOperatorDeploymentType() {
+        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE)
+                .map(OperatorDeploymentType::resolve)
+                .orElse(OperatorDeploymentType.HELM);
+    }
+
+    public static List<String> getNamespacesToObserve() {
+        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE).map(s -> s.split(SEPERATOR_PATTERN))
+                .map(Arrays::asList)
+                .orElse(new ArrayList<>());
+    }
+
+    public static List<String> getNamespacesOfInterest() {
+        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_OF_INTEREST).map(s -> s.split(SEPERATOR_PATTERN))
+                .map(Arrays::asList)
+                .orElse(new ArrayList<>());
+    }
     /*
     Config to resolve Entando Docker Images
      */
@@ -46,26 +71,6 @@ public final class EntandoOperatorConfig extends EntandoOperatorConfigBase {
 
     public static Optional<String> getOperatorServiceAccount() {
         return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_SERVICEACCOUNT);
-    }
-
-    public static OperatorDeploymentType getOperatorDeploymentType() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_DEPLOYMENT_TYPE)
-                .map(OperatorDeploymentType::resolve)
-                .orElse(OperatorDeploymentType.HELM);
-    }
-
-    public static boolean isClusterScopedDeployment() {
-        if (getOperatorDeploymentType() == OperatorDeploymentType.OLM) {
-            return getNamespacesToObserve().isEmpty();
-        } else {
-            return getNamespacesToObserve().stream().anyMatch("*"::equals);
-        }
-    }
-
-    public static List<String> getNamespacesToObserve() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_NAMESPACES_TO_OBSERVE).map(s -> s.split(SEPERATOR_PATTERN))
-                .map(Arrays::asList)
-                .orElse(new ArrayList<>());
     }
 
     public static List<String> getImagePullSecrets() {
@@ -101,6 +106,12 @@ public final class EntandoOperatorConfig extends EntandoOperatorConfigBase {
         return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_REQUIRES_FILESYSTEM_GROUP_OVERRIDE).map("true"::equals).orElse(false);
     }
 
+    public static Set<String> getAllAccessibleNamespaces() {
+        final Set<String> result = new HashSet<>(getNamespacesOfInterest());
+        result.addAll(getNamespacesToObserve());
+        return result;
+    }
+
     public static Optional<String> getIngressClass() {
         return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_INGRESS_CLASS);
     }
@@ -109,20 +120,8 @@ public final class EntandoOperatorConfig extends EntandoOperatorConfigBase {
         return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_DEFAULT_ROUTING_SUFFIX);
     }
 
-    public static long getPodCompletionTimeoutSeconds() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_POD_COMPLETION_TIMEOUT_SECONDS).map(Long::valueOf).orElse(600L);
-    }
-
-    public static long getPodReadinessTimeoutSeconds() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_POD_READINESS_TIMEOUT_SECONDS).map(Long::valueOf).orElse(600L);
-    }
-
-    public static long getPodShutdownTimeoutSeconds() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_POD_SHUTDOWN_TIMEOUT_SECONDS).map(Long::valueOf).orElse(120L);
-    }
-
     public static boolean imposeResourceLimits() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_DEFAULT_LIMITS).map(Boolean::valueOf).orElse(true);
+        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_K8S_OPERATOR_IMPOSE_LIMITS).map(Boolean::valueOf).orElse(true);
     }
 
     public static boolean disablePvcGarbageCollection() {
@@ -135,15 +134,12 @@ public final class EntandoOperatorConfig extends EntandoOperatorConfigBase {
                 .orElse(false);
     }
 
-    public static Optional<String> getCertificateAuthoritySecretName() {
-        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_CA_SECRET_NAME);
-    }
-
     public static Optional<String> getTlsSecretName() {
         return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_TLS_SECRET_NAME);
 
     }
 
-
-
+    public static Optional<Integer> getNumberOfReadinessFailures() {
+        return lookupProperty(EntandoOperatorConfigProperty.ENTANDO_NUMBER_OF_READINESS_FAILURES).map(Integer::valueOf);
+    }
 }

@@ -20,45 +20,22 @@ import static java.lang.String.format;
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.ContainerStatusBuilder;
-import io.fabric8.kubernetes.api.model.DoneablePod;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodConditionBuilder;
 import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.PodStatusBuilder;
-import io.fabric8.kubernetes.client.Watch;
-import io.fabric8.kubernetes.client.Watcher;
-import io.fabric8.kubernetes.client.dsl.PodResource;
-import io.fabric8.kubernetes.client.dsl.Watchable;
 import java.util.Date;
 import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import org.entando.kubernetes.client.EntandoExecListener;
-import org.entando.kubernetes.client.PodWatcher;
+import java.util.concurrent.TimeoutException;
 import org.entando.kubernetes.controller.spi.common.PodResult;
 import org.entando.kubernetes.controller.spi.common.PodResult.State;
 import org.entando.kubernetes.controller.support.client.PodClient;
-import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
 
 public class PodClientDouble extends AbstractK8SClientDouble implements PodClient {
 
-    private final BlockingQueue<PodWatcher> podWatcherHolder = new ArrayBlockingQueue<>(15);
-    private final BlockingQueue<EntandoExecListener> execListenerHolder = new ArrayBlockingQueue<>(15);
-
-    public PodClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces) {
-        super(namespaces);
-    }
-
-    @Override
-    public BlockingQueue<PodWatcher> getPodWatcherQueue() {
-        return podWatcherHolder;
-    }
-
-    @Override
-    public BlockingQueue<EntandoExecListener> getExecListenerHolder() {
-        return execListenerHolder;
+    public PodClientDouble(ConcurrentHashMap<String, NamespaceDouble> namespaces, ClusterDouble cluster) {
+        super(namespaces, cluster);
     }
 
     @Override
@@ -74,17 +51,12 @@ public class PodClientDouble extends AbstractK8SClientDouble implements PodClien
     }
 
     @Override
-    public void removeAndWait(String namespace, Map<String, String> labels) {
+    public void removeAndWait(String namespace, Map<String, String> labels, int timeoutSeconds) {
         getNamespace(namespace).getPods().values().removeIf(
                 pod -> labels.entrySet().stream()
                         .allMatch(labelEntry -> pod.getMetadata().getLabels().containsKey(labelEntry.getKey()) && pod.getMetadata()
                                 .getLabels().get(
                                         labelEntry.getKey()).equals(labelEntry.getValue())));
-        if (ENQUEUE_POD_WATCH_HOLDERS.get()) {
-            watchPod(Objects::isNull,
-                    EntandoOperatorConfig.getPodShutdownTimeoutSeconds(), new DummyWatchable());
-
-        }
     }
 
     @Override
@@ -93,35 +65,19 @@ public class PodClientDouble extends AbstractK8SClientDouble implements PodClien
     }
 
     @Override
-    public Pod runToCompletion(Pod pod) {
+    public Pod runToCompletion(Pod pod, int timeoutSeconds) {
         if (pod != null) {
             getNamespace(pod).putPod(pod);
-            if (ENQUEUE_POD_WATCH_HOLDERS.get()) {
-                return watchPod(got -> PodResult.of(got).getState() == State.COMPLETED,
-                        EntandoOperatorConfig.getPodCompletionTimeoutSeconds(), new DummyWatchable());
-
-            } else {
-
-                pod.setStatus(new PodStatusBuilder().withPhase("Complete").build());
-                pod.getSpec().getInitContainers()
-                        .forEach(container -> pod.getStatus().getInitContainerStatuses().add(new ContainerStatusBuilder()
-                                .withNewState().withNewTerminated().withReason("Complete").withExitCode(0).endTerminated().endState()
-                                .build()));
-                pod.getSpec().getContainers().forEach(container -> pod.getStatus().getContainerStatuses().add(new ContainerStatusBuilder()
-                        .withNewState().withNewTerminated().withReason("Complete").withExitCode(0).endTerminated().endState()
-                        .build()));
-            }
+            pod.setStatus(new PodStatusBuilder().withPhase("Complete").build());
+            pod.getSpec().getInitContainers()
+                    .forEach(container -> pod.getStatus().getInitContainerStatuses().add(new ContainerStatusBuilder()
+                            .withNewState().withNewTerminated().withReason("Complete").withExitCode(0).endTerminated().endState()
+                            .build()));
+            pod.getSpec().getContainers().forEach(container -> pod.getStatus().getContainerStatuses().add(new ContainerStatusBuilder()
+                    .withNewState().withNewTerminated().withReason("Complete").withExitCode(0).endTerminated().endState()
+                    .build()));
         }
         return pod;
-    }
-
-    @Override
-    public EntandoExecListener executeOnPod(Pod pod, String containerName, int timeoutSeconds, String... commands) {
-        if (pod != null) {
-            PodResource<Pod, DoneablePod> podResource = new PodResourceDouble();
-            return executeAndWait(podResource, containerName, timeoutSeconds, commands);
-        }
-        return null;
     }
 
     @Override
@@ -138,13 +94,8 @@ public class PodClientDouble extends AbstractK8SClientDouble implements PodClien
     }
 
     @Override
-    public Pod waitForPod(String namespace, String labelName, String labelValue) {
-        if (ENQUEUE_POD_WATCH_HOLDERS.get()) {
-            return watchPod(
-                    got -> PodResult.of(got).getState() == State.READY || PodResult.of(got).getState() == State.COMPLETED,
-                    EntandoOperatorConfig.getPodReadinessTimeoutSeconds(),
-                    new DummyWatchable());
-        } else if (!getNamespace(namespace).getPods().isEmpty()) {
+    public Pod waitForPod(String namespace, String labelName, String labelValue, int timeoutSeconds) throws TimeoutException {
+        if (namespace != null && !getNamespace(namespace).getPods().isEmpty()) {
             Pod result = getNamespace(namespace).getPods().values().stream()
                     .filter(pod -> labelValue.equals(pod.getMetadata().getLabels().get(labelName))).findFirst()
                     .orElseThrow(() ->
@@ -171,18 +122,4 @@ public class PodClientDouble extends AbstractK8SClientDouble implements PodClien
         return null;
     }
 
-    private static class DummyWatchable implements Watchable<Watch, Watcher<Pod>> {
-
-        @Override
-        public Watch watch(Watcher<Pod> podWatcher) {
-            return () -> {
-            };
-        }
-
-        @Override
-        public Watch watch(String s, Watcher<Pod> podWatcher) {
-            return () -> {
-            };
-        }
-    }
 }

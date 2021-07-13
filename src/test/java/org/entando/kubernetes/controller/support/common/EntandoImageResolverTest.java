@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
+import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
+import org.entando.kubernetes.controller.spi.client.SerializedEntandoResource;
 import org.entando.kubernetes.controller.spi.common.DbmsDockerVendorStrategy;
 import org.entando.kubernetes.controller.spi.container.DockerImageInfo;
 import org.junit.jupiter.api.AfterEach;
@@ -106,8 +108,25 @@ class EntandoImageResolverTest {
         //when I resolve the image
         String imageUri = new EntandoImageResolver(imageVersionsConfigMap).determineImageUri("test-entando/test-image");
         //then it reflects the injected value
-        assertThat(imageUri,
-                is("test.io/test-entando/test-image:6.1.4"));
+        assertThat(imageUri, is("test.io/test-entando/test-image:6.1.4"));
+    }
+
+    @Test
+    void testResolutionFromAnnotations() {
+        //Given I have information in the Configmap against a key reflecting the repository and org
+        ConfigMap imageVersionsConfigMap = new ConfigMapBuilder()
+                .addToData("test-image", "{\"registry\":\"test.io\",\"organization\":\"test-entando\",\"version\":\"6.1.3\"}")
+                .build();
+        //But I have an annotation that overrides the image by an org-aware repository identifier
+        final SerializedEntandoResource resourceOfInterest = new SerializedEntandoResource();
+        resourceOfInterest.setMetadata(new ObjectMetaBuilder()
+                .addToAnnotations(EntandoImageResolver.IMAGE_OVERRIDE_ANNOTATION_PREFIX + "test-entando-test-image",
+                        "test.io/test-entando/test-image:6.1.0-SNAPSHOT")
+                .build());
+        //when I resolve the image
+        String imageUri = new EntandoImageResolver(imageVersionsConfigMap, resourceOfInterest).determineImageUri("test-entando/test-image");
+        //then it reflects the value from teh annotation
+        assertThat(imageUri, is("test.io/test-entando/test-image:6.1.0-SNAPSHOT"));
     }
 
     @Test

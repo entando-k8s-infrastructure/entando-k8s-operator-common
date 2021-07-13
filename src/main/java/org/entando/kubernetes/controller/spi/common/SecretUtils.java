@@ -21,7 +21,7 @@ import io.fabric8.kubernetes.api.model.EnvVarSourceBuilder;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
 import java.util.UUID;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
 
 public class SecretUtils {
 

@@ -63,7 +63,7 @@ public final class NamedArgumentCaptor<T extends HasMetadata> {
 
         @Override
         public boolean matches(Object argument) {
-            return ((HasMetadata) argument).getMetadata().getName().equals(name);
+            return NamedArgumentCaptor.this.clazz.isInstance(argument) && ((HasMetadata) argument).getMetadata().getName().equals(name);
         }
     }
 }

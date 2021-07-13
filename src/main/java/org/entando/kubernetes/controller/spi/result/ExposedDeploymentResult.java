@@ -20,11 +20,11 @@ import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import org.entando.kubernetes.controller.spi.common.SerializeByReference;
-import org.entando.kubernetes.model.AbstractServerStatus;
+import org.entando.kubernetes.model.common.ServerStatus;
 
 public class ExposedDeploymentResult<T extends ExposedDeploymentResult<T>> extends ExposedService implements ServiceDeploymentResult<T> {
 
-    private AbstractServerStatus status;
+    private ServerStatus status;
     private final Pod pod;
 
     public ExposedDeploymentResult(Pod pod, Service service, Ingress ingress) {
@@ -33,7 +33,7 @@ public class ExposedDeploymentResult<T extends ExposedDeploymentResult<T>> exten
     }
 
     @Override
-    public T withStatus(AbstractServerStatus status) {
+    public T withStatus(ServerStatus status) {
         this.status = status;
         return thisAsT();
     }
@@ -44,7 +44,7 @@ public class ExposedDeploymentResult<T extends ExposedDeploymentResult<T>> exten
     }
 
     @Override
-    public AbstractServerStatus getStatus() {
+    public ServerStatus getStatus() {
         return status;
     }
 

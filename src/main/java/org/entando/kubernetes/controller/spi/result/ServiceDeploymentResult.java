@@ -17,13 +17,13 @@
 package org.entando.kubernetes.controller.spi.result;
 
 import io.fabric8.kubernetes.api.model.Pod;
-import org.entando.kubernetes.model.AbstractServerStatus;
+import org.entando.kubernetes.model.common.ServerStatus;
 
 public interface ServiceDeploymentResult<T extends ServiceDeploymentResult<T>> extends ServiceResult {
 
-    T withStatus(AbstractServerStatus status);
+    T withStatus(ServerStatus status);
 
-    AbstractServerStatus getStatus();
+    ServerStatus getStatus();
 
     Pod getPod();
 }

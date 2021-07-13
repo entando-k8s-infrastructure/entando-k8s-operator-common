@@ -24,9 +24,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfigProperty;
+import org.entando.kubernetes.controller.spi.common.TrustStoreHelper;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfigProperty;
-import org.entando.kubernetes.controller.support.common.TlsHelper;
 
 public class CertificateSecretHelper {
 
@@ -44,8 +45,8 @@ public class CertificateSecretHelper {
 
             final Path path = caCert.toAbsolutePath();
             if (path.toFile().exists()) {
-                if (EntandoOperatorConfig.getCertificateAuthoritySecretName().isEmpty()) {
-                    System.setProperty(EntandoOperatorConfigProperty.ENTANDO_CA_SECRET_NAME.getJvmSystemProperty(),
+                if (EntandoOperatorSpiConfig.getCertificateAuthoritySecretName().isEmpty()) {
+                    System.setProperty(EntandoOperatorSpiConfigProperty.ENTANDO_CA_SECRET_NAME.getJvmSystemProperty(),
                             TEST_CA_SECRET);
                     final Secret caSecret = new SecretBuilder()
                             .withNewMetadata()
@@ -55,7 +56,7 @@ public class CertificateSecretHelper {
                             .addToData(caCert.toFile().getName(), Base64.getEncoder().encodeToString(Files.readAllBytes(caCert)))
                             .build();
                     secrets.add(caSecret);
-                    secrets.add(TlsHelper.newTrustStoreSecret(caSecret));
+                    secrets.add(TrustStoreHelper.newTrustStoreSecret(caSecret));
                 }
             }
             if (tlsPath.resolve("tls.crt").toFile().exists() && tlsPath.resolve("tls.key").toFile().exists()) {

@@ -31,10 +31,11 @@ import org.entando.kubernetes.controller.spi.examples.SamplePublicIngressingDbAw
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 import org.entando.kubernetes.controller.support.client.doubles.SimpleK8SClientDouble;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfigProperty;
-import org.entando.kubernetes.model.EntandoBaseCustomResource;
 import org.entando.kubernetes.model.app.EntandoApp;
 import org.entando.kubernetes.model.app.EntandoAppBuilder;
 import org.entando.kubernetes.model.app.EntandoAppSpec;
+import org.entando.kubernetes.model.common.EntandoBaseCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResourceStatus;
 import org.entando.kubernetes.test.common.InProcessTestData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,9 +105,11 @@ class ServiceAcountCreatorTest implements InProcessTestData {
         SamplePublicIngressingDbAwareDeployable<EntandoAppSpec> deployable = new SamplePublicIngressingDbAwareDeployable<EntandoAppSpec>(
                 entandoApp, null,
                 emulateKeycloakDeployment(client)) {
+
             @Override
-            protected List<DeployableContainer> createContainers(EntandoBaseCustomResource<EntandoAppSpec> entandoResource) {
-                return Arrays.asList(new SampleDeployableContainer<EntandoAppSpec>(entandoResource, databaseServiceResult) {
+            protected List<DeployableContainer> createContainers(
+                    EntandoBaseCustomResource<EntandoAppSpec, EntandoCustomResourceStatus> entandoResource) {
+                return Arrays.asList(new SampleDeployableContainer<EntandoAppSpec>(entandoResource, databaseConnectionInfo) {
                     @Override
                     public List<KubernetesPermission> getKubernetesPermissions() {
                         return Arrays.asList(new KubernetesPermission("route.openshift.io", "routes", "delete"));

@@ -21,18 +21,35 @@ import io.fabric8.kubernetes.api.model.Service;
 public abstract class AbstractServiceResult implements ServiceResult {
 
     protected final Service service;
+    protected String adminSecretName;
 
     protected AbstractServiceResult(Service service) {
+        this(service, null);
+    }
+
+    protected AbstractServiceResult(Service service, String adminSecretName) {
         this.service = service;
+        this.adminSecretName = adminSecretName;
+    }
+
+    @Override
+    public String getAdminSecretName() {
+        return adminSecretName;
     }
 
     @Override
     public String getInternalServiceHostname() {
+        if (service == null) {
+            return null;
+        }
         return service.getMetadata().getName() + "." + service.getMetadata().getNamespace() + ".svc.cluster.local";
     }
 
     @Override
     public String getPort() {
+        if (service == null) {
+            return null;
+        }
         return service.getSpec().getPorts().get(0).getPort().toString();
     }
 

@@ -25,12 +25,18 @@ import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.dsl.TtyExecErrorChannelable;
 import io.fabric8.kubernetes.client.dsl.TtyExecErrorable;
 import io.fabric8.kubernetes.client.dsl.TtyExecOutputErrorable;
+import io.fabric8.kubernetes.client.dsl.TtyExecable;
 import io.fabric8.kubernetes.client.dsl.internal.PodOperationContext;
-import io.fabric8.kubernetes.client.dsl.internal.PodOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.internal.core.v1.PodOperationsImpl;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 
 public class PodResourceDouble extends PodOperationsImpl {
 
@@ -43,9 +49,8 @@ public class PodResourceDouble extends PodOperationsImpl {
     }
 
     @Override
-    public ContainerResource<
-            String, LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean, InputStream,
-            Boolean> inContainer(
+    public ContainerResource<LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean,
+            InputStream, Boolean> inContainer(
             String containerId) {
         return new PodResourceDouble(getContext().withContainerId(containerId));
     }
@@ -71,6 +76,11 @@ public class PodResourceDouble extends PodOperationsImpl {
     }
 
     @Override
+    public TtyExecable<String, ExecWatch> writingErrorChannel(OutputStream errChannel) {
+        return new PodResourceDouble(getContext().withErrChannel(errChannel));
+    }
+
+    @Override
     public Execable<String, ExecWatch> usingListener(ExecListener execListener) {
         return new PodResourceDouble(getContext().withExecListener(execListener));
     }
@@ -89,14 +99,19 @@ public class PodResourceDouble extends PodOperationsImpl {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            getContext().getExecListener().onClose(1000, null);
+            getContext().getExecListener().onClose(0, "Success");
         }).start();
-        return new ExecWatchDouble();
+        return new ExecWatchDouble(Arrays.asList(command));
     }
 
     public class ExecWatchDouble implements ExecWatch {
 
+        private final List<String> commands;
         private PodResourceDouble podResourceDouble = PodResourceDouble.this;
+
+        public ExecWatchDouble(List<String> asList) {
+            this.commands = asList;
+        }
 
         public PodResourceDouble getPodResourceDouble() {
             return podResourceDouble;
@@ -104,12 +119,12 @@ public class PodResourceDouble extends PodOperationsImpl {
 
         @Override
         public OutputStream getInput() {
-            return null;
+            return new ByteArrayOutputStream();
         }
 
         @Override
         public InputStream getOutput() {
-            return null;
+            return new ByteArrayInputStream(String.join("\n", commands).getBytes(StandardCharsets.UTF_8));
         }
 
         @Override

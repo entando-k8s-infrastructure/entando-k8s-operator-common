@@ -16,36 +16,49 @@
 
 package org.entando.kubernetes.controller.support.command;
 
+import static java.lang.String.format;
+import static java.util.Optional.ofNullable;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.interruptionSafe;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
+
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaimStatus;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
-import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import org.entando.kubernetes.controller.spi.common.EntandoControllerException;
+import org.entando.kubernetes.controller.spi.common.EntandoOperatorSpiConfig;
+import org.entando.kubernetes.controller.spi.common.ExceptionUtils;
+import org.entando.kubernetes.controller.spi.common.LabelNames;
+import org.entando.kubernetes.controller.spi.common.NameUtils;
 import org.entando.kubernetes.controller.spi.common.PodResult;
 import org.entando.kubernetes.controller.spi.container.ServiceBackingContainer;
 import org.entando.kubernetes.controller.spi.deployable.DbAwareDeployable;
 import org.entando.kubernetes.controller.spi.deployable.Deployable;
+import org.entando.kubernetes.controller.spi.deployable.ExternalService;
 import org.entando.kubernetes.controller.spi.deployable.IngressingDeployable;
+import org.entando.kubernetes.controller.spi.deployable.SsoAwareDeployable;
 import org.entando.kubernetes.controller.spi.result.ServiceDeploymentResult;
 import org.entando.kubernetes.controller.support.client.SimpleK8SClient;
 import org.entando.kubernetes.controller.support.client.SimpleKeycloakClient;
 import org.entando.kubernetes.controller.support.common.EntandoImageResolver;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
-import org.entando.kubernetes.controller.support.common.KubeUtils;
-import org.entando.kubernetes.controller.support.controller.EntandoControllerException;
 import org.entando.kubernetes.controller.support.creators.DatabasePreparationPodCreator;
 import org.entando.kubernetes.controller.support.creators.DeploymentCreator;
+import org.entando.kubernetes.controller.support.creators.IngressCreator;
 import org.entando.kubernetes.controller.support.creators.KeycloakClientCreator;
 import org.entando.kubernetes.controller.support.creators.PersistentVolumeClaimCreator;
 import org.entando.kubernetes.controller.support.creators.SecretCreator;
 import org.entando.kubernetes.controller.support.creators.ServiceAccountCreator;
 import org.entando.kubernetes.controller.support.creators.ServiceCreator;
-import org.entando.kubernetes.model.AbstractServerStatus;
-import org.entando.kubernetes.model.DbServerStatus;
-import org.entando.kubernetes.model.EntandoCustomResource;
-import org.entando.kubernetes.model.WebServerStatus;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
+import org.entando.kubernetes.model.common.ServerStatus;
 
 public class DeployCommand<T extends ServiceDeploymentResult<T>> {
 
@@ -57,9 +70,12 @@ public class DeployCommand<T extends ServiceDeploymentResult<T>> {
     protected final DatabasePreparationPodCreator databasePreparationJobCreator;
     protected final KeycloakClientCreator keycloakClientCreator;
     protected final ServiceAccountCreator serviceAccountCreator;
-    protected final AbstractServerStatus status;
-    protected final EntandoCustomResource entandoCustomResource;
+    protected final ServerStatus status;
+    private final IngressCreator ingressCreator;
+    protected EntandoCustomResource entandoCustomResource;
     private Pod pod;
+    private final ExecutorService scheduledExecutorService = Executors.newSingleThreadExecutor();
+    private Ingress ingress;
 
     public DeployCommand(Deployable<T> deployable) {
         this.deployable = deployable;
@@ -71,24 +87,47 @@ public class DeployCommand<T extends ServiceDeploymentResult<T>> {
         databasePreparationJobCreator = new DatabasePreparationPodCreator(entandoCustomResource);
         keycloakClientCreator = new KeycloakClientCreator(entandoCustomResource);
         serviceAccountCreator = new ServiceAccountCreator(entandoCustomResource);
-        if (deployable instanceof IngressingDeployable) {
-            status = new WebServerStatus();
-        } else {
-            status = new DbServerStatus();
-        }
-        status.setQualifier(deployable.getNameQualifier());
+        status = new ServerStatus(deployable.getQualifier().orElse(NameUtils.MAIN_QUALIFIER))
+                .withOriginatingCustomResource(entandoCustomResource);
+        ingressCreator = new IngressCreator(entandoCustomResource);
+
     }
 
-    public T execute(SimpleK8SClient<?> k8sClient, SimpleKeycloakClient potentiallyNullKeycloakClient) {
-        Optional<SimpleKeycloakClient> keycloakClient = Optional.ofNullable(potentiallyNullKeycloakClient);
-        EntandoImageResolver entandoImageResolver = new EntandoImageResolver(k8sClient.entandoResources().loadDockerImageInfoConfigMap());
-        if (deployable instanceof DbAwareDeployable && ((DbAwareDeployable<?>) deployable).isExpectingDatabaseSchemas()) {
-            prepareDbSchemas(k8sClient, entandoImageResolver, (DbAwareDeployable<?>) deployable);
+    /**
+     * This method is not allowed to throw any exceptions. Any error conditions associated with the execution of this method should be
+     * attached to the EntandoCustomResource.
+     */
+    public T execute(SimpleK8SClient<?> k8sClient, SimpleKeycloakClient potentiallyNullKeycloakClient, int timeoutSeconds) {
+        status.withOriginatingControllerPod(k8sClient.entandoResources().getNamespace(),
+                EntandoOperatorSpiConfig.getControllerPodName());
+        final Future<T> future = scheduledExecutorService.submit(() -> {
+            final Optional<ExternalService> externalService = deployable.getExternalService();
+            if (externalService.isPresent()) {
+                prepareConnectivityToExternalService(k8sClient, externalService.get());
+            } else {
+                deployServiceInternally(k8sClient, potentiallyNullKeycloakClient);
+            }
+            return deployable.createResult(getDeployment(), getService(), ingress, pod).withStatus(getStatus());
+        });
+        try {
+            return interruptionSafe(() -> future.get(timeoutSeconds, TimeUnit.SECONDS));
+        } catch (Exception e) {
+            this.entandoCustomResource = k8sClient.entandoResources()
+                    .deploymentFailed(entandoCustomResource, e,
+                            deployable.getQualifier().orElse(NameUtils.MAIN_QUALIFIER));
+            getStatus().finishWith(ExceptionUtils.failureOf(entandoCustomResource, e));
         }
-        if (persistentVolumeClaimCreator.needsPersistentVolumeClaaims(deployable)) {
-            //NB!!! it seems there is some confusion in K8S when a patch is done without any changes.
-            //K8Sseems to increment either the resourceVersion or generation or both and then
-            //subsequent updates fail
+        //Note that this line will only be executed if there was an exception
+        return deployable.createResult(getDeployment(), getService(), ingress, pod).withStatus(getStatus());
+    }
+
+    private void deployServiceInternally(SimpleK8SClient<?> k8sClient, SimpleKeycloakClient potentiallyNullKeycloakClient)
+            throws TimeoutException {
+        Optional<SimpleKeycloakClient> keycloakClient = ofNullable(potentiallyNullKeycloakClient);
+        EntandoImageResolver entandoImageResolver = new EntandoImageResolver(
+                k8sClient.entandoResources().loadDockerImageInfoConfigMap(),
+                deployable.getCustomResource());
+        if (persistentVolumeClaimCreator.needsPersistentVolumeClaims(deployable)) {
             createPersistentVolumeClaims(k8sClient);
         }
         secretCreator.createSecrets(k8sClient.secrets(), deployable);
@@ -96,88 +135,127 @@ public class DeployCommand<T extends ServiceDeploymentResult<T>> {
         if (shouldCreateService(deployable)) {
             createService(k8sClient);
         }
-        Ingress ingress = maybeCreateIngress(k8sClient);
-        if (keycloakClientCreator.requiresKeycloakClients(deployable)) {
+        maybeCreateIngress(k8sClient);
+        if (deployable instanceof SsoAwareDeployable) {
             keycloakClientCreator.createKeycloakClients(
                     k8sClient.secrets(),
                     keycloakClient.orElseThrow(IllegalStateException::new),
-                    deployable,
-                    Optional.ofNullable(ingress));
+                    (SsoAwareDeployable<?>) deployable,
+                    ingress);
+            this.status.setSsoRealm(keycloakClientCreator.getRealm());
+            this.status.setSsoClientId(keycloakClientCreator.getSsoClientId());
+        }
+        if (deployable instanceof DbAwareDeployable && ((DbAwareDeployable<?>) deployable).isExpectingDatabaseSchemas()) {
+            prepareDbSchemas(k8sClient, entandoImageResolver, (DbAwareDeployable<?>) deployable);
         }
         createDeployment(k8sClient, entandoImageResolver);
         waitForPod(k8sClient);
-        if (status.hasFailed()) {
-            throw new EntandoControllerException("Creation of Kubernetes resources has failed");
-        }
-        return deployable.createResult(getDeployment(), getService(), ingress, getPod()).withStatus(getStatus());
+        getStatus().finish();
     }
 
-    @SuppressWarnings("java:S1172")//because this parameter is required for the subclass
-    protected Ingress maybeCreateIngress(SimpleK8SClient<?> k8sClient) {
-        return null;
+    private void prepareConnectivityToExternalService(SimpleK8SClient<?> k8sClient, ExternalService externalService) {
+        if (externalService.getCreateDelegateService()) {
+            serviceCreator.createExternalService(k8sClient, externalService);
+            getStatus().setServiceName(getService().getMetadata().getName());
+        }
+        //For ExternalService that does not require an internal service, we do nothing
+        getStatus().finish();
+    }
+
+    protected void maybeCreateIngress(SimpleK8SClient<?> k8sClient) {
+        if (deployable instanceof IngressingDeployable<?> && ((IngressingDeployable<?>) deployable).isIngressRequired()) {
+            if (ingressCreator.requiresDelegatingService(serviceCreator.getService(), (IngressingDeployable<?>) deployable)) {
+                Service newDelegatingService = serviceCreator.newDelegatingService(k8sClient.services(),
+                        (IngressingDeployable<?>) deployable);
+                ingressCreator
+                        .createIngress(k8sClient.ingresses(), (IngressingDeployable<?>) deployable, newDelegatingService, this.status);
+            } else {
+                ingressCreator.createIngress(k8sClient.ingresses(), (IngressingDeployable<?>) deployable, serviceCreator.getService(),
+                        this.status);
+            }
+            status.setIngressName(ingressCreator.getIngress().getMetadata().getName());
+            k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+            this.ingress = ingressCreator.getIngress();
+        }
     }
 
     private boolean shouldCreateService(Deployable<T> deployable) {
         return deployable.getContainers().stream().anyMatch(ServiceBackingContainer.class::isInstance);
     }
 
-    private void waitForPod(SimpleK8SClient<?> k8sClient) {
-        pod = k8sClient.pods()
-                .waitForPod(entandoCustomResource.getMetadata().getNamespace(), KubeUtils.DEPLOYMENT_LABEL_NAME, resolveName(deployable));
-        status.setPodStatus(pod.getStatus());
-        k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+    private void waitForPod(SimpleK8SClient<?> k8sClient) throws TimeoutException {
+        pod = k8sClient.pods().waitForPod(
+                entandoCustomResource.getMetadata().getNamespace(),
+                LabelNames.DEPLOYMENT.getName(),
+                resolveName(deployable),
+                EntandoOperatorSpiConfig.getPodReadinessTimeoutSeconds());
+        status.putPodPhase(pod.getMetadata().getName(), pod.getStatus().getPhase());
+        entandoCustomResource = k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+        if (PodResult.of(pod).hasFailed()) {
+            throw new EntandoControllerException(pod,
+                    format("Deployment failed. Please inspect the logs of the pod %s/%s",
+                            pod.getMetadata().getNamespace(),
+                            pod.getMetadata().getName()));
+
+        }
     }
 
     private String resolveName(Deployable<T> deployable) {
-        return entandoCustomResource.getMetadata().getName() + "-" + deployable.getNameQualifier();
+        return entandoCustomResource.getMetadata().getName() + deployable.getQualifier().map(s -> "-" + s).orElse("");
     }
 
     private void createDeployment(SimpleK8SClient<?> k8sClient, EntandoImageResolver entandoImageResolver) {
         deploymentCreator.createDeployment(entandoImageResolver, k8sClient.deployments(), deployable);
-        status.setDeploymentStatus(deploymentCreator.reloadDeployment(k8sClient.deployments()));
-        k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+        status.setDeploymentName(deploymentCreator.getDeployment().getMetadata().getName());
+        entandoCustomResource = k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
     }
 
     private void createService(SimpleK8SClient<?> k8sClient) {
         serviceCreator.createService(k8sClient.services(), deployable);
-        status.setServiceStatus(serviceCreator.reloadPrimaryService(k8sClient.services()));
-        k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+        status.setServiceName(serviceCreator.getService().getMetadata().getName());
+        entandoCustomResource = k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
     }
 
     private void createPersistentVolumeClaims(SimpleK8SClient<?> k8sClient) {
+        //NB!!! it seems there is some confusion in K8S when a patch is done without any changes.
+        //K8Sseems to increment either the resourceVersion or generation or both and then
+        //subsequent updates fail
         persistentVolumeClaimCreator.createPersistentVolumeClaimsFor(k8sClient.persistentVolumeClaims(), deployable);
-        List<PersistentVolumeClaimStatus> statuses = persistentVolumeClaimCreator
-                .reloadPersistentVolumeClaims(k8sClient.persistentVolumeClaims());
-        status.setPersistentVolumeClaimStatuses(statuses);
-        k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+        persistentVolumeClaimCreator.reloadPersistentVolumeClaims(k8sClient.persistentVolumeClaims()).forEach(
+                persistentVolumeClaim -> status.putPersistentVolumeClaimPhase(persistentVolumeClaim.getMetadata().getName(),
+                        ofNullable(persistentVolumeClaim.getStatus()).map(PersistentVolumeClaimStatus::getPhase).orElse("Pending"))
+        );
+        entandoCustomResource = k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
     }
 
-    private void prepareDbSchemas(
-            SimpleK8SClient<?> k8sClient,
-            EntandoImageResolver entandoImageResolver,
-            DbAwareDeployable<?> dbAwareDeployable
-    ) {
+    private void prepareDbSchemas(SimpleK8SClient<?> k8sClient, EntandoImageResolver entandoImageResolver,
+            DbAwareDeployable<?> dbAwareDeployable) throws TimeoutException {
         Pod completedPod = databasePreparationJobCreator.runToCompletion(k8sClient, dbAwareDeployable, entandoImageResolver);
-        status.setInitPodStatus(completedPod.getStatus());
-        k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
+        status.putPodPhase(completedPod.getMetadata().getName(), completedPod.getStatus().getPhase());
+        entandoCustomResource = k8sClient.entandoResources().updateStatus(entandoCustomResource, status);
         PodResult podResult = PodResult.of(completedPod);
         if (podResult.hasFailed()) {
-            throw new EntandoControllerException("Could not init database schemas");
+            throw new EntandoControllerException(completedPod,
+                    format("Database preparation failed. Please inspect the logs of the pod %s/%s",
+                            completedPod.getMetadata().getNamespace(), completedPod.getMetadata().getName()));
         } else if (EntandoOperatorConfig.garbageCollectSuccessfullyCompletedPods()) {
-            k8sClient.pods().deletePod(completedPod);
+            withDiagnostics(() -> {
+                k8sClient.pods().deletePod(completedPod);
+                return null;
+            }, () -> completedPod);
         }
+    }
+
+    public Ingress getIngress() {
+        return ingress;
     }
 
     public Service getService() {
         return serviceCreator.getService();
     }
 
-    public AbstractServerStatus getStatus() {
+    public ServerStatus getStatus() {
         return status;
-    }
-
-    public Pod getPod() {
-        return pod;
     }
 
     public Deployment getDeployment() {

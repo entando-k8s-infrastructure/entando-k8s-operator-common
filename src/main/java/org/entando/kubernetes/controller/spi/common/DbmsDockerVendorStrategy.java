@@ -18,7 +18,7 @@ package org.entando.kubernetes.controller.spi.common;
 
 import java.util.Locale;
 import java.util.Optional;
-import org.entando.kubernetes.model.DbmsVendor;
+import org.entando.kubernetes.model.common.DbmsVendor;
 
 public enum DbmsDockerVendorStrategy {
     CENTOS_MYSQL(DbmsVendorConfig.MYSQL, DockerRegistry.DOCKER_IO, "centos", "mysql-80-centos7", "/var/lib/mysql/data", 27L, 512),

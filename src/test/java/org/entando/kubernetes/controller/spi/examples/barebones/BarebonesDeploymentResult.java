@@ -20,12 +20,12 @@ import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Service;
 import org.entando.kubernetes.controller.spi.result.AbstractServiceResult;
 import org.entando.kubernetes.controller.spi.result.ServiceDeploymentResult;
-import org.entando.kubernetes.model.AbstractServerStatus;
+import org.entando.kubernetes.model.common.ServerStatus;
 
 public class BarebonesDeploymentResult extends AbstractServiceResult implements ServiceDeploymentResult<BarebonesDeploymentResult> {
 
     private final Pod pod;
-    private AbstractServerStatus status;
+    private ServerStatus status;
 
     public BarebonesDeploymentResult(Service service, Pod pod) {
         super(service);
@@ -43,7 +43,7 @@ public class BarebonesDeploymentResult extends AbstractServiceResult implements 
     }
 
     @Override
-    public BarebonesDeploymentResult withStatus(AbstractServerStatus status) {
+    public BarebonesDeploymentResult withStatus(ServerStatus status) {
         this.status = status;
         return this;
     }
@@ -54,7 +54,7 @@ public class BarebonesDeploymentResult extends AbstractServiceResult implements 
     }
 
     @Override
-    public AbstractServerStatus getStatus() {
+    public ServerStatus getStatus() {
         return status;
     }
 }

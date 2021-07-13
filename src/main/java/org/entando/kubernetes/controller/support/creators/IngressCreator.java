@@ -16,15 +16,16 @@
 
 package org.entando.kubernetes.controller.support.creators;
 
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.ioSafe;
+import static org.entando.kubernetes.controller.spi.common.ExceptionUtils.withDiagnostics;
+
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.extensions.HTTPIngressPath;
 import io.fabric8.kubernetes.api.model.extensions.Ingress;
 import io.fabric8.kubernetes.api.model.extensions.IngressBuilder;
-import io.fabric8.kubernetes.api.model.extensions.IngressStatus;
 import io.fabric8.kubernetes.api.model.extensions.IngressTLS;
 import io.fabric8.kubernetes.api.model.extensions.IngressTLSBuilder;
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
@@ -32,15 +33,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import org.entando.kubernetes.controller.spi.common.NameUtils;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import org.entando.kubernetes.controller.spi.common.ResourceUtils;
 import org.entando.kubernetes.controller.spi.common.SecretUtils;
-import org.entando.kubernetes.controller.spi.deployable.Ingressing;
+import org.entando.kubernetes.controller.spi.container.IngressingContainer;
+import org.entando.kubernetes.controller.spi.container.IngressingPathOnPort;
 import org.entando.kubernetes.controller.spi.deployable.IngressingDeployable;
 import org.entando.kubernetes.controller.support.client.IngressClient;
 import org.entando.kubernetes.controller.support.common.EntandoOperatorConfig;
-import org.entando.kubernetes.controller.support.common.KubeUtils;
-import org.entando.kubernetes.model.EntandoCustomResource;
+import org.entando.kubernetes.model.common.EntandoCustomResource;
+import org.entando.kubernetes.model.common.ServerStatus;
 
 public class IngressCreator extends AbstractK8SResourceCreator {
 
@@ -70,7 +73,7 @@ public class IngressCreator extends AbstractK8SResourceCreator {
     }
 
     private static boolean isTopLevelDomain(String host) {
-        try {
+        return ioSafe(() -> {
             //loaded from https://data.iana.org/TLD/tlds-alpha-by-domain.txt
             try (InputStream stream = Thread.currentThread().getContextClassLoader()
                     .getResourceAsStream("top-level-domains.txt");
@@ -84,63 +87,64 @@ public class IngressCreator extends AbstractK8SResourceCreator {
                     line = r.readLine();
                 }
             }
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-        return false;
+            return false;
+        });
     }
 
-    public boolean requiresDelegatingService(Service service, Ingressing<?> ingressingContainer) {
-        return !service.getMetadata().getNamespace().equals(ingressingContainer.getIngressNamespace());
+    public boolean requiresDelegatingService(Service service, IngressingDeployable<?> ingressingDeployable) {
+        return !service.getMetadata().getNamespace().equals(ingressingDeployable.getIngressNamespace());
     }
 
     public void createIngress(IngressClient ingressClient, IngressingDeployable<?> ingressingDeployable,
-            Service service) {
+            Service service, ServerStatus status) {
         this.ingress = ingressClient.loadIngress(ingressingDeployable.getIngressNamespace(), ingressingDeployable.getIngressName());
         if (this.ingress == null) {
-            Ingress newIngress = newIngress(ingressClient, ingressPathCreator.buildPaths(ingressingDeployable, service),
+            Ingress newIngress = newIngress(ingressClient, ingressPathCreator.buildPaths(ingressingDeployable, service, status),
                     ingressingDeployable);
-            this.ingress = ingressClient.createIngress(entandoCustomResource, newIngress);
+            this.ingress = withDiagnostics(() -> ingressClient.createIngress(entandoCustomResource, newIngress), () -> newIngress);
         } else {
-            if (KubeUtils.customResourceOwns(entandoCustomResource, ingress)) {
+            if (ResourceUtils.customResourceOwns(entandoCustomResource, ingress)) {
+                final String host = determineIngressHost(ingressClient, ingressingDeployable);
+                final List<IngressTLS> tls = maybeBuildTls(ingressClient, ingressingDeployable);
                 this.ingress = ingressClient.editIngress(entandoCustomResource, ingressingDeployable.getIngressName())
-                        .editSpec().editFirstRule().withHost(determineIngressHost(ingressClient, ingressingDeployable)).endRule()
-                        .withTls(maybeBuildTls(ingressClient, ingressingDeployable)).endSpec().done();
+                        .editSpec().editFirstRule().withHost(host).endRule()
+                        .withTls(tls).endSpec().done();
             }
-            ingressPathCreator.addMissingHttpPaths(ingressClient, ingressingDeployable, ingress, service);
-        }
-    }
+            List<IngressingPathOnPort> ingressingContainers = ingressingDeployable.getContainers().stream()
+                    .filter(IngressingContainer.class::isInstance).map(IngressingContainer.class::cast).collect(Collectors.toList());
 
-    public IngressStatus reloadIngress(IngressClient ingresses) {
-        if (this.ingress == null) {
-            return null;
+            this.ingress = ingressPathCreator.addMissingHttpPaths(ingressClient, ingressingContainers, ingress, service, status);
         }
-        this.ingress = ingresses.loadIngress(ingress.getMetadata().getNamespace(), ingress.getMetadata().getName());
-        return this.ingress.getStatus();
     }
 
     public Ingress getIngress() {
         return ingress;
     }
 
-    private Ingress newIngress(IngressClient ingressClient, List<HTTPIngressPath> paths,
+    private Ingress newIngress(IngressClient ingressClient, Map<String, HTTPIngressPath> paths,
             IngressingDeployable<?> deployable) {
         return new IngressBuilder()
                 .withNewMetadata()
-                .withAnnotations(forNginxIngress(deployable))
-                .withName(entandoCustomResource.getMetadata().getName() + "-" + NameUtils.DEFAULT_INGRESS_SUFFIX)
+                .addToAnnotations(forNginxIngress(deployable))
+                .addToAnnotations(toPathAnnotations(paths))
+                .withName(deployable.getIngressName())
                 .withNamespace(entandoCustomResource.getMetadata().getNamespace())
                 .addToLabels(entandoCustomResource.getKind(), entandoCustomResource.getMetadata().getName())
                 .withOwnerReferences(ResourceUtils.buildOwnerReference(entandoCustomResource))
                 .endMetadata()
                 .withNewSpec()
+                .withIngressClassName(EntandoOperatorConfig.getIngressClass().orElse(null))
                 .withTls(maybeBuildTls(ingressClient, deployable))
                 .addNewRule()
                 .withHost(determineIngressHost(ingressClient, deployable))
                 .withNewHttp()
-                .withPaths(paths)
+                .withPaths(new ArrayList<>(paths.values()))
                 .endHttp()
                 .endRule().endSpec().build();
+    }
+
+    private Map<String, String> toPathAnnotations(Map<String, HTTPIngressPath> paths) {
+        return paths.entrySet().stream().collect(Collectors.toMap(Entry::getKey, entry -> entry.getValue().getPath()));
     }
 
     private Map<String, String> forNginxIngress(IngressingDeployable<?> deployable) {

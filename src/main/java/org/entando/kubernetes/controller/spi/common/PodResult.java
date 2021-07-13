@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+//TODO move to org.entando.kubernetes.controller.support
 public class PodResult {
 
     public static final ThreadLocal<SimpleDateFormat> DATE_FORMAT = ThreadLocal

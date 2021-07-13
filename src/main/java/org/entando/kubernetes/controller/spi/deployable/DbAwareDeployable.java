@@ -16,23 +16,16 @@
 
 package org.entando.kubernetes.controller.spi.deployable;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import java.util.List;
 import java.util.stream.Collectors;
-import org.entando.kubernetes.controller.spi.container.DbAware;
+import org.entando.kubernetes.controller.spi.container.DbAwareContainer;
 import org.entando.kubernetes.controller.spi.result.ServiceDeploymentResult;
 
 public interface DbAwareDeployable<T extends ServiceDeploymentResult<T>> extends Deployable<T> {
 
     default boolean isExpectingDatabaseSchemas() {
-        return getDbAwareContainers().stream().anyMatch(dbAware -> !dbAware.getSchemaConnectionInfo().isEmpty());
-    }
-
-    @JsonIgnore
-    default List<DbAware> getDbAwareContainers() {
-        return getContainers().stream().filter(DbAware.class::isInstance)
-                .map(DbAware.class::cast).collect(Collectors.toList());
-
+        return getContainers().stream().filter(DbAwareContainer.class::isInstance)
+                .map(DbAwareContainer.class::cast).collect(Collectors.toList()).stream()
+                .anyMatch(dbAware -> !dbAware.getSchemaConnectionInfo().isEmpty());
     }
 
 }
